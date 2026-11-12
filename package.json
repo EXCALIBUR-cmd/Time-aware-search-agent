@@ -1,0 +1,41 @@
+{
+  "name": "time-aware-search-agent",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "seed": "tsx scripts/seed.ts",
+    "eval": "tsx scripts/eval.ts",
+    "test": "vitest run",
+    "demo": "tsx scripts/demo.ts"
+  },
+  "dependencies": {
+    "@ai-sdk/groq": "^2.0.63",
+    "@ai-sdk/react": "^2.0.292",
+    "ai": "^5.0.289",
+    "better-sqlite3": "^13.0.3",
+    "chrono-node": "^2.10.3",
+    "date-fns": "^4.4.0",
+    "date-fns-tz": "^3.2.0",
+    "next": "16.4.6",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@tailwindcss/turbopack": "4.3.3",
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/node": "^24.19.2",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "babel-plugin-react-compiler": "1.0.0",
+    "tailwindcss": "4.3.3",
+    "tsx": "^4.23.15",
+    "typescript": "^5",
+    "vitest": "^5.1.0"
+  }
+}
