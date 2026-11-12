@@ -2,14 +2,15 @@
 
 ## How it works
 
-Every turn runs the same pipeline. Only three steps call a model: the router, the agent loop and extraction.
+Every turn runs the same pipeline. Only three steps call a model: the router, the answer and extraction.
 
 ```
 user message
   → resolve dates in code      "last Tuesday" → 3 Nov 00:00 to 23:59 IST   (chrono-node)
-  → route (small model)        chat | fresh | recall | reverify; a past date or "do you remember" forces memory
   → recall from SQLite         user profile, every message in the date range, FTS5 topic matches, with their claims
-  → agent loop (main model)    one tool, web_search: up to 4 parallel queries, at most 3 tool steps
+  → route and plan (small)     chat | fresh | recall | reverify, plus 1 to 4 search queries; a past date forces memory
+  → search in code             the planned queries in parallel, 8 results at most, prompt kept under ~6,000 tokens
+  → answer (main model)        one call with the results; one follow-up search; the small model answers on a 429
   → stream the answer          status lines first, then tokens, then source chips
   → after the stream closes    save the answer, extract claims and user facts (small model), index them
 ```
@@ -24,7 +25,7 @@ Every question in the brief is about time: what was said on a date, and whether 
 - **Date maths runs in code.** The model never works out what "Monday" means. It gets a `<memory>` block where every item carries its date, or an explicit "No conversations found between 1 Oct and 1 Oct", the line that stops invented memories. A date without a year means its most recent occurrence.
 - **A user profile.** Facts the user states about themselves (name, role, location, preferences) are stored append-only and injected every turn, the newest value winning.
 - **Recall respects the clock.** Messages, claims and user facts are readable only when dated at or before the agent's "now", and date ranges are clamped to it: at 3 Nov, an 8 Nov chat does not exist yet. Nothing is deleted; only recall is filtered. Web search and its cache always use the real clock.
-- **One tool.** Memory needs are predictable from the message, so memory is a pipeline step, not a tool. The model has one decision: search or not. The open chat is not recalled: it is already the model's history.
+- **One tool.** Memory needs are predictable from the message, so memory is a pipeline step, not a tool. The router plans the searches, so the main model usually answers in one call. The open chat is not recalled: it is already the model's history.
 - **Speed comes from skipping work**: a small-model router (about half a second), no search for small talk or recall, parallel queries, a search cache (6 hours; 30 minutes for prices and news; bypassed when re-verifying).
 
 ## Considered and rejected
