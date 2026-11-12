@@ -84,7 +84,14 @@ export function logPromptSize(modelCall: string, ...promptParts: unknown[]): voi
   console.info(`[prompt] ${modelCall}: ~${sumTokens(promptParts)} tokens`);
 }
 
+export function errorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string') return error;
+  if (typeof error === 'object' && error !== null && 'message' in error) return String(error.message);
+  return JSON.stringify(error);
+}
+
 export function userFacingError(error: unknown): string {
-  const raw = error instanceof Error ? error.message : String(error);
+  const raw = errorMessage(error);
   return RATE_LIMITED_OR_TOO_LARGE.test(raw) ? BUSY_MESSAGE : raw;
 }

@@ -115,4 +115,7 @@ test('a rate limit or too-large error becomes a short friendly message; other er
   expect(userFacingError(new Error(groq429))).toBe(BUSY_MESSAGE);
   expect(userFacingError(new Error(groq413))).toBe(BUSY_MESSAGE);
   expect(userFacingError(new Error('Missing environment variable(s): GROQ_API_KEY.'))).toBe('Missing environment variable(s): GROQ_API_KEY.');
+  const providerErrorThatIsNotAnErrorObject = { message: 'Tool choice is none, but model called a tool', type: 'invalid_request_error' };
+  expect(userFacingError(providerErrorThatIsNotAnErrorObject)).toBe('Tool choice is none, but model called a tool');
+  expect(userFacingError('plain text failure')).toBe('plain text failure');
 });

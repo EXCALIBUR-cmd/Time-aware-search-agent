@@ -7,17 +7,23 @@ import { recall, topicTerms } from '../memory/recall';
 import { getMessages, listUserFacts, saveClaims, saveMessage, saveUserFacts } from '../memory/store';
 import { createWebSearchTool, type NumberedResult } from '../search/web-search-tool';
 import { refersToPast, resolveTime } from '../time/resolve';
-import { estimatePromptTokens, fitPromptToBudget, logPromptSize, TOKEN_BUDGET, userFacingError } from './budget';
+import {
+  errorMessage,
+  estimatePromptTokens,
+  fitPromptToBudget,
+  logPromptSize,
+  TOKEN_BUDGET,
+  userFacingError,
+} from './budget';
 import { buildInstructions } from './prompt';
 import { route } from './router';
 
 const MAX_TOOL_STEPS = 3;
 const HISTORY_TURNS = 12;
 const RETRIES_AFTER_GROQ_WAIT = 1;
-const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
-const logFailure = (what: string) => (e: unknown) => console.error(`${what} failed:`, errorText(e));
+const logFailure = (what: string) => (e: unknown) => console.error(`${what} failed:`, errorMessage(e));
 const logRawErrorAndDescribeForUser = (e: unknown) => {
-  console.error('[agent] turn failed:', errorText(e));
+  console.error('[agent] turn failed:', errorMessage(e));
   return userFacingError(e);
 };
 
@@ -100,6 +106,7 @@ export function runAgent({
           logPromptSize(`${cfg.MAIN_MODEL} answer, step ${stepNumber + 1}`, system, messages);
           return stepNumber >= MAX_TOOL_STEPS ? { toolChoice: 'none' as const } : {};
         },
+        onError: ({ error }) => console.error('[agent] model call failed:', errorMessage(error)),
         onStepFinish: (step) => {
           if (reverify && step.toolCalls.length) status(`Comparing ${claimCount} claims…`);
         },
@@ -119,7 +126,7 @@ export function runAgent({
           }
         },
       });
-      writer.merge(result.toUIMessageStream({ onError: logRawErrorAndDescribeForUser, sendReasoning: false }));
+      writer.merge(result.toUIMessageStream({ onError: userFacingError, sendReasoning: false }));
     },
   });
 }
