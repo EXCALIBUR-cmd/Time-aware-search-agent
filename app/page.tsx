@@ -79,8 +79,7 @@ export default function Page() {
     setRealNow(toLocalInput(new Date()));
     try {
       setSimulated(localStorage.getItem(CLOCK_KEY) ?? '');
-    } catch {
-    }
+    } catch {}
   }, []);
   function setClock(value: string) {
     const next = value && value < toLocalInput(new Date()) ? value : '';
@@ -88,8 +87,7 @@ export default function Page() {
     try {
       if (next) localStorage.setItem(CLOCK_KEY, next);
       else localStorage.removeItem(CLOCK_KEY);
-    } catch {
-    }
+    } catch {}
   }
 
   useEffect(() => {

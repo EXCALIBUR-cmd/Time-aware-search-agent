@@ -15,6 +15,8 @@ const Response = z.object({
   ),
 });
 
+const RESULTS_PER_QUERY = 3;
+
 const timeRange = (days: number) => (days <= 1 ? 'day' : days <= 7 ? 'week' : days <= 31 ? 'month' : 'year');
 
 export async function tavilySearch(query: string, depth: Depth, recencyDays?: number): Promise<SearchResult[]> {
@@ -24,7 +26,7 @@ export async function tavilySearch(query: string, depth: Depth, recencyDays?: nu
     body: JSON.stringify({
       query,
       search_depth: depth,
-      max_results: 3,
+      max_results: RESULTS_PER_QUERY,
       ...(recencyDays ? { time_range: timeRange(recencyDays) } : {}),
     }),
     signal: AbortSignal.timeout(10_000),

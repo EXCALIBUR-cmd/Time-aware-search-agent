@@ -8,6 +8,8 @@ const Body = z.object({
   now: z.iso.datetime().optional(),
 });
 
+const ALLOWED_CLOCK_SKEW_MS = 60_000;
+
 export async function POST(req: Request) {
   try {
     const body = Body.safeParse(await req.json());
@@ -19,7 +21,7 @@ export async function POST(req: Request) {
     if (!body.success || last?.role !== 'user' || !text) return new Response('Invalid request: send a non-empty message.', { status: 400 });
     const simulatedNow =
       process.env.NODE_ENV === 'development' && body.data.now ? new Date(body.data.now) : undefined;
-    if (simulatedNow && simulatedNow.getTime() > Date.now() + 60_000) {
+    if (simulatedNow && simulatedNow.getTime() > Date.now() + ALLOWED_CLOCK_SKEW_MS) {
       return new Response('The simulated date cannot be in the future.', { status: 400 });
     }
     return createUIMessageStreamResponse({

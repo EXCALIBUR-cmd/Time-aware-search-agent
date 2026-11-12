@@ -5,18 +5,18 @@ import { dbPath } from '../config';
 
 const USER_FACTS = `
 CREATE TABLE IF NOT EXISTS user_facts (
-  key TEXT NOT NULL,                  -- name, role, location, preference_<topic>
+  key TEXT NOT NULL,
   value TEXT NOT NULL,
   source_message_id TEXT REFERENCES messages(id),
-  updated_at TEXT NOT NULL            -- when the user said it
+  updated_at TEXT NOT NULL
 );`;
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS conversations (
   id TEXT PRIMARY KEY,
   title TEXT,
-  created_at TEXT NOT NULL,           -- ISO 8601, UTC
-  is_demo INTEGER NOT NULL DEFAULT 0  -- 1 for seeded demo history
+  created_at TEXT NOT NULL,
+  is_demo INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS messages (
   id TEXT PRIMARY KEY,
@@ -28,16 +28,16 @@ CREATE TABLE IF NOT EXISTS messages (
 CREATE INDEX IF NOT EXISTS idx_messages_time ON messages(created_at);
 CREATE TABLE IF NOT EXISTS claims (
   id TEXT PRIMARY KEY,
-  message_id TEXT NOT NULL REFERENCES messages(id),  -- the assistant answer it came from
+  message_id TEXT NOT NULL REFERENCES messages(id),
   subject TEXT NOT NULL,
   attribute TEXT NOT NULL,
   value TEXT NOT NULL,
   source_url TEXT,
-  checked_at TEXT NOT NULL            -- when the source was read
+  checked_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_claims_subject ON claims(subject);
 CREATE TABLE IF NOT EXISTS search_cache (
-  query_key TEXT PRIMARY KEY,         -- normalised query
+  query_key TEXT PRIMARY KEY,
   results_json TEXT NOT NULL,
   fetched_at TEXT NOT NULL
 );

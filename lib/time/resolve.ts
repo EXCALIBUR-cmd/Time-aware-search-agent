@@ -32,7 +32,8 @@ export function resolveTime(text: string, now: Date, tz: string): TimeRange[] {
       Date.UTC((c.get('year') ?? 0) + yearShift, (c.get('month') ?? 1) - 1, c.get('day') ?? 1);
     let from = day(r.start);
     let to = r.end ? day(r.end) : from;
-    if (r.start.isCertain('month') && !r.start.isCertain('year') && from > today) {
+    const yearlessDateLandedInFuture = r.start.isCertain('month') && !r.start.isCertain('year') && from > today;
+    if (yearlessDateLandedInFuture) {
       from = day(r.start, -1);
       to = r.end ? day(r.end, -1) : from;
     }

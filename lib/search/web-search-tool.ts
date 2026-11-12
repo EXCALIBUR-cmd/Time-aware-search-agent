@@ -8,7 +8,8 @@ export type NumberedResult = SearchResult & { n: number };
 
 const HOUR = 3_600_000;
 const MAX_CHARS = 1500;
-const ttl = (query: string) => (/pric|latest|today|news/i.test(query) ? HOUR / 2 : 6 * HOUR);
+const FAST_MOVING_TOPIC = /pric|latest|today|news/i;
+const cacheLifetime = (query: string) => (FAST_MOVING_TOPIC.test(query) ? HOUR / 2 : 6 * HOUR);
 
 async function cachedSearch(query: string, depth: Depth, recencyDays: number | undefined, bypassCache: boolean) {
   const db = getDb();
@@ -16,7 +17,7 @@ async function cachedSearch(query: string, depth: Depth, recencyDays: number | u
   const hit = db.prepare('SELECT results_json, fetched_at FROM search_cache WHERE query_key = ?').get(key) as
     | { results_json: string; fetched_at: string }
     | undefined;
-  if (hit && !bypassCache && Date.now() - Date.parse(hit.fetched_at) < ttl(query)) {
+  if (hit && !bypassCache && Date.now() - Date.parse(hit.fetched_at) < cacheLifetime(query)) {
     return JSON.parse(hit.results_json) as SearchResult[];
   }
   const results = await tavilySearch(query, depth, recencyDays);

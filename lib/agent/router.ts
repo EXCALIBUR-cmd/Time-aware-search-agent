@@ -34,7 +34,6 @@ export async function route(text: string, hasPastDate: boolean): Promise<Mode> {
       abortSignal: AbortSignal.timeout(1500),
     });
     mode = Output.parse(JSON.parse(out.match(/\{[\s\S]*\}/)?.[0] ?? '')).mode;
-  } catch {
-  }
+  } catch {}
   return applyOverrides(mode, text, hasPastDate);
 }

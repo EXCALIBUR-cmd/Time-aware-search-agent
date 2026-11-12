@@ -4,8 +4,7 @@ import { DEMO_NOW } from './seed';
 
 try {
   process.loadEnvFile();
-} catch {
-}
+} catch {}
 
 process.env.AGENT_NOW = DEMO_NOW;
 
