@@ -1,6 +1,7 @@
 import { groq } from '@ai-sdk/groq';
 import { generateText } from 'ai';
 import { z } from 'zod';
+import { logPromptSize } from '../agent/budget';
 import { FAST_MODEL_PROVIDER_OPTIONS, getConfig } from '../config';
 import type { NumberedResult } from '../search/web-search-tool';
 import type { Claim } from './store';
@@ -33,12 +34,14 @@ Reply with JSON only: {"facts":[{"key":"name","value":"Asha"}]}, or {"facts":[]}
 export const mentionsSelf = (text: string) => /\b(i|i'm|im|my|me|mine|myself)\b/i.test(text);
 
 export async function extractUserFacts(userText: string): Promise<{ key: string; value: string }[]> {
+  const prompt = userText.slice(0, 2000);
+  logPromptSize('user fact extraction', FACTS_SYSTEM, prompt);
   const { text } = await generateText({
     model: groq(getConfig().FAST_MODEL),
     providerOptions: FAST_MODEL_PROVIDER_OPTIONS,
     temperature: 0,
     system: FACTS_SYSTEM,
-    prompt: userText.slice(0, 2000),
+    prompt,
   });
   const { facts } = Facts.parse(JSON.parse(text.match(/\{[\s\S]*\}/)?.[0] ?? ''));
   return facts
@@ -48,12 +51,14 @@ export async function extractUserFacts(userText: string): Promise<{ key: string;
 }
 
 export async function extractClaims(answer: string, sources: NumberedResult[]): Promise<Claim[]> {
+  const prompt = `Answer:\n${answer.slice(0, 4000)}\n\nSources:\n${sources.map((s) => `[${s.n}] ${s.title} ${s.url}`).join('\n')}`;
+  logPromptSize('claim extraction', SYSTEM, prompt);
   const { text } = await generateText({
     model: groq(getConfig().FAST_MODEL),
     providerOptions: FAST_MODEL_PROVIDER_OPTIONS,
     temperature: 0,
     system: SYSTEM,
-    prompt: `Answer:\n${answer.slice(0, 4000)}\n\nSources:\n${sources.map((s) => `[${s.n}] ${s.title} ${s.url}`).join('\n')}`,
+    prompt,
   });
   const { claims } = Output.parse(JSON.parse(text.match(/\{[\s\S]*\}/)?.[0] ?? ''));
   return claims.slice(0, MAX_CLAIMS).map((c) => ({

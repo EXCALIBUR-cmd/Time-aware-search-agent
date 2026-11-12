@@ -15,7 +15,7 @@ const Response = z.object({
   ),
 });
 
-const RESULTS_PER_QUERY = 3;
+export const RESULTS_PER_QUERY = 3;
 
 const timeRange = (days: number) => (days <= 1 ? 'day' : days <= 7 ? 'week' : days <= 31 ? 'month' : 'year');
 

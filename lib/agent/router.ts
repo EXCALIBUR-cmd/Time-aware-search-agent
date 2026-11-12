@@ -2,6 +2,7 @@ import { groq } from '@ai-sdk/groq';
 import { generateText } from 'ai';
 import { z } from 'zod';
 import { FAST_MODEL_PROVIDER_OPTIONS, getConfig } from '../config';
+import { logPromptSize } from './budget';
 
 export type Mode = 'chat' | 'fresh' | 'recall' | 'reverify';
 
@@ -26,6 +27,7 @@ const ROUTER_TIMEOUT_MS = 1500;
 const MODE_WHEN_ROUTER_FAILS: Mode = 'fresh';
 
 async function askModelForMode(text: string): Promise<Mode> {
+  logPromptSize('router', SYSTEM, text);
   const { text: out } = await generateText({
     model: groq(getConfig().FAST_MODEL),
     providerOptions: FAST_MODEL_PROVIDER_OPTIONS,

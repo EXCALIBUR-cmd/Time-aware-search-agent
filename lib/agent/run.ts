@@ -7,13 +7,19 @@ import { recall, topicTerms } from '../memory/recall';
 import { getMessages, listUserFacts, saveClaims, saveMessage, saveUserFacts } from '../memory/store';
 import { createWebSearchTool, type NumberedResult } from '../search/web-search-tool';
 import { refersToPast, resolveTime } from '../time/resolve';
-import { buildSystemPrompt } from './prompt';
+import { estimatePromptTokens, fitPromptToBudget, logPromptSize, TOKEN_BUDGET, userFacingError } from './budget';
+import { buildInstructions } from './prompt';
 import { route } from './router';
 
 const MAX_TOOL_STEPS = 3;
 const HISTORY_TURNS = 12;
+const RETRIES_AFTER_GROQ_WAIT = 1;
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 const logFailure = (what: string) => (e: unknown) => console.error(`${what} failed:`, errorText(e));
+const logRawErrorAndDescribeForUser = (e: unknown) => {
+  console.error('[agent] turn failed:', errorText(e));
+  return userFacingError(e);
+};
 
 export function runAgent({
   conversationId,
@@ -34,7 +40,7 @@ export function runAgent({
   const userMessageId = saveMessage({ conversationId, role: 'user', content: text, at });
 
   return createUIMessageStream({
-    onError: errorText,
+    onError: logRawErrorAndDescribeForUser,
     execute: async ({ writer }) => {
       const status = (s: string) => writer.write({ type: 'data-status', data: s, transient: true });
       status('Thinking…');
@@ -56,12 +62,24 @@ export function runAgent({
       if (nothingToReverify) mode = 'recall';
       const reverify = mode === 'reverify';
 
+      const prompt = fitPromptToBudget({
+        instructions: buildInstructions({ mode, now: at, tz: zone }),
+        profile: formatProfile(listUserFacts(at), zone),
+        memory,
+        history,
+        userText: text,
+        searchResults: [],
+      });
+      const system = [prompt.instructions, prompt.profile, prompt.memory].filter(Boolean).join('\n\n');
+      const tokensLeftForSearch = Math.min(TOKEN_BUDGET.searchResults, TOKEN_BUDGET.total - estimatePromptTokens(prompt));
+
       const sources: NumberedResult[] = [];
       const tools: ToolSet =
         mode === 'fresh' || reverify
           ? {
               web_search: createWebSearchTool({
                 bypassCache: reverify,
+                tokenBudgetForTurn: tokensLeftForSearch,
                 onStatus: status,
                 onResult: (r) => {
                   sources.push(r);
@@ -73,11 +91,15 @@ export function runAgent({
 
       const result = streamText({
         model: groq(cfg.MAIN_MODEL),
-        system: buildSystemPrompt({ mode, profile: formatProfile(listUserFacts(at), zone), memory, now: at, tz: zone }),
-        messages: [...history, { role: 'user', content: text }],
+        system,
+        messages: [...prompt.history, { role: 'user', content: text }],
         tools,
+        maxRetries: RETRIES_AFTER_GROQ_WAIT,
         stopWhen: stepCountIs(MAX_TOOL_STEPS + 1),
-        prepareStep: ({ stepNumber }) => (stepNumber >= MAX_TOOL_STEPS ? { toolChoice: 'none' } : {}),
+        prepareStep: ({ stepNumber, messages }) => {
+          logPromptSize(`${cfg.MAIN_MODEL} answer, step ${stepNumber + 1}`, system, messages);
+          return stepNumber >= MAX_TOOL_STEPS ? { toolChoice: 'none' as const } : {};
+        },
         onStepFinish: (step) => {
           if (reverify && step.toolCalls.length) status(`Comparing ${claimCount} claims…`);
         },
@@ -97,7 +119,7 @@ export function runAgent({
           }
         },
       });
-      writer.merge(result.toUIMessageStream({ onError: errorText, sendReasoning: false }));
+      writer.merge(result.toUIMessageStream({ onError: logRawErrorAndDescribeForUser, sendReasoning: false }));
     },
   });
 }

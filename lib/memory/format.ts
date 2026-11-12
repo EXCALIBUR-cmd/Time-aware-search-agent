@@ -1,16 +1,19 @@
 import { formatInTimeZone } from 'date-fns-tz';
+import { CHARS_PER_TOKEN, TOKEN_BUDGET } from '../agent/budget';
 import type { TimeRange } from '../time/resolve';
 import type { MemoryItem } from './recall';
 import type { UserFact } from './store';
 
-const FULL_EXCERPT_CHARS = 1500;
-const SHORT_EXCERPT_CHARS = 400;
-const ITEMS_BEFORE_SHORTENING = 8;
+const LONGEST_EXCERPT_CHARS = 1500;
+const SHORTEST_EXCERPT_CHARS = 150;
+const SHARE_OF_MEMORY_BUDGET_FOR_EXCERPTS = 0.8;
+const CHARS_SHARED_BY_ALL_EXCERPTS = TOKEN_BUDGET.memory * CHARS_PER_TOKEN * SHARE_OF_MEMORY_BUDGET_FOR_EXCERPTS;
 
 const day = (d: Date | string, tz: string) => formatInTimeZone(d, tz, 'd MMM yyyy');
 
 export function formatMemory(items: MemoryItem[], ranges: TimeRange[], tz: string): string {
-  const excerpt = items.length > ITEMS_BEFORE_SHORTENING ? SHORT_EXCERPT_CHARS : FULL_EXCERPT_CHARS;
+  const evenShare = Math.floor(CHARS_SHARED_BY_ALL_EXCERPTS / Math.max(1, items.length));
+  const excerpt = Math.min(LONGEST_EXCERPT_CHARS, Math.max(SHORTEST_EXCERPT_CHARS, evenShare));
   const lines = (match: MemoryItem['match']) =>
     items
       .filter((m) => m.match === match)

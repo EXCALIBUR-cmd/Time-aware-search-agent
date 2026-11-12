@@ -10,7 +10,7 @@ const MODE: Record<Mode, string> = {
   reverify: `This turn: re-verify the claims in <memory>. Call web_search with one query per claim subject (for example "Neon Postgres pricing"), up to 4 per call. Then compare old and new and answer with a table: Subject · Then (date) · Now · Changed? · Source. Mark unclear evidence "Couldn't confirm"; never guess.`,
 };
 
-export function buildSystemPrompt(p: { mode: Mode; profile: string; memory: string; now: Date; tz: string }): string {
+export function buildInstructions(p: { mode: Mode; now: Date; tz: string }): string {
   return [
     'You are a concise chat agent with web search and a dated memory of past conversations.',
     `Today is ${formatInTimeZone(p.now, p.tz, 'EEEE, d MMMM yyyy, HH:mm')} in ${p.tz}.`,
@@ -23,9 +23,5 @@ export function buildSystemPrompt(p: { mode: Mode; profile: string; memory: stri
 - When something has changed, lead with the change.
 - Ask one clarifying question only when the request cannot be answered otherwise.`,
     MODE[p.mode],
-    p.profile,
-    p.memory,
-  ]
-    .filter(Boolean)
-    .join('\n\n');
+  ].join('\n\n');
 }
