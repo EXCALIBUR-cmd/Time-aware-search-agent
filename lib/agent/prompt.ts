@@ -1,16 +1,25 @@
 import { formatInTimeZone } from 'date-fns-tz';
 import type { Mode } from './router';
 
-const MODE: Record<Mode, string> = {
+const REVERIFY_ANSWER = `Answer with a table: Subject · Then (date) · Now · Changed? · Source. Mark unclear evidence "Couldn't confirm"; never guess.`;
+
+const WHEN_NOT_SEARCHED_YET: Record<Mode, string> = {
   chat: 'This turn: reply briefly and directly. No search is available.',
   fresh:
-    'This turn: use web_search (up to 4 queries in one call) for anything current. Skip it when the conversation so far already answers the question.',
+    'This turn: call web_search once (up to 4 queries) if you need current information. Skip it when the conversation so far already answers the question.',
   recall:
     'This turn: answer from <user_profile>, <memory> and the conversation so far, giving the date of each past conversation you mention. No search is available. If the user is telling you something rather than asking, just acknowledge it.',
-  reverify: `This turn: re-verify the claims in <memory>. Call web_search with one query per claim subject (for example "Neon Postgres pricing"), up to 4 per call. Then compare old and new and answer with a table: Subject · Then (date) · Now · Changed? · Source. Mark unclear evidence "Couldn't confirm"; never guess.`,
+  reverify: `This turn: re-verify the claims in <memory>. Call web_search once with one query per claim subject (for example "Neon Postgres pricing"), up to 4. ${REVERIFY_ANSWER}`,
 };
 
-export function buildInstructions(p: { mode: Mode; now: Date; tz: string }): string {
+const WHEN_ALREADY_SEARCHED: Partial<Record<Mode, string>> = {
+  fresh:
+    'This turn: the web has already been searched for you and the results are in <search_results>, numbered [n]. Answer from them, citing each fact as [n] and ending with the Sources list. Call web_search once more only if they do not answer the question.',
+  reverify: `This turn: re-verify the claims in <memory> against <search_results>, fetched for you just now and numbered [n]. ${REVERIFY_ANSWER} Cite each "Now" value as [n] and end with the Sources list. Call web_search once more only for a subject the results do not cover.`,
+};
+
+export function buildInstructions(p: { mode: Mode; now: Date; tz: string; searchedAlready: boolean }): string {
+  const thisTurn = (p.searchedAlready && WHEN_ALREADY_SEARCHED[p.mode]) || WHEN_NOT_SEARCHED_YET[p.mode];
   return [
     'You are a concise chat agent with web search and a dated memory of past conversations.',
     `Today is ${formatInTimeZone(p.now, p.tz, 'EEEE, d MMMM yyyy, HH:mm')} in ${p.tz}.`,
@@ -22,6 +31,6 @@ export function buildInstructions(p: { mode: Mode; now: Date; tz: string }): str
 - <user_profile> holds what the user has told you about themselves, newest value per fact; trust it over older messages and never search the web for it. If <memory> shows an older, different value, the fact changed: say so when asked.
 - When something has changed, lead with the change.
 - Ask one clarifying question only when the request cannot be answered otherwise.`,
-    MODE[p.mode],
+    thisTurn,
   ].join('\n\n');
 }

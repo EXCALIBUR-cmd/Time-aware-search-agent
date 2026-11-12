@@ -1,5 +1,17 @@
 import { expect, test } from 'vitest';
-import { applyOverrides } from './router';
+import { applyOverrides, parsePlan } from './router';
+
+test('the router plan is validated: a mode and at most 4 trimmed, non-empty queries', () => {
+  expect(parsePlan('{"mode":"fresh","queries":["Neon pricing"," Supabase pricing "]}')).toEqual({
+    mode: 'fresh',
+    queries: ['Neon pricing', 'Supabase pricing'],
+  });
+  expect(parsePlan('Sure! {"mode":"chat"}')).toEqual({ mode: 'chat', queries: [] });
+  expect(parsePlan('{"mode":"reverify","queries":["a","b","","c","d","e"]}').queries).toEqual(['a', 'b', 'c', 'd']);
+  expect(() => parsePlan('{"mode":"search","queries":["a"]}')).toThrow();
+  expect(() => parsePlan('{"mode":"fresh","queries":"Neon pricing"}')).toThrow();
+  expect(() => parsePlan('no json here')).toThrow();
+});
 
 test.each(['do you remember my name?', 'Did I tell you where I live?', 'what did I say about Postgres?', 'i told you that already'])(
   'memory phrase routes to recall: %s',

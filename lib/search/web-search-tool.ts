@@ -7,6 +7,7 @@ import { RESULTS_PER_QUERY, tavilySearch, type Depth, type SearchResult } from '
 
 export type NumberedResult = SearchResult & { n: number };
 export type QueryResults = { query: string; results: SearchResult[] };
+export type SearchOutcome = { results: NumberedResult[]; errors: string[]; searched_at: string };
 
 const HOUR = 3_600_000;
 const MAX_RESULTS_PER_CALL = 8;
@@ -100,7 +101,14 @@ async function cachedSearch(query: string, depth: Depth, recencyDays: number | u
   return results;
 }
 
-export function createWebSearchTool(opts: {
+export function formatSearchResults(outcome: SearchOutcome): string {
+  const results = outcome.results.map((r) => `[${r.n}] ${r.title}\n${r.url}\n${r.content}`);
+  const errors = outcome.errors.map((error) => `Search problem: ${error}`);
+  const body = results.length ? results.join('\n\n') : 'No results.';
+  return [`<search_results searched_at="${outcome.searched_at}">`, body, ...errors, '</search_results>'].join('\n');
+}
+
+export function createSearchSession(opts: {
   bypassCache: boolean;
   tokenBudgetForTurn: number;
   onStatus: (text: string) => void;
@@ -109,7 +117,30 @@ export function createWebSearchTool(opts: {
   let citationNumberWithinTurn = 0;
   let tokensLeftThisTurn = opts.tokenBudgetForTurn;
   const shownUrls = new Set<string>();
-  return tool({
+
+  async function search(queries: string[], depth: Depth = 'basic', recencyDays?: number): Promise<SearchOutcome> {
+    opts.onStatus(`Searching: ${queries.join(', ')}…`);
+    const errors: string[] = [];
+    const searchOrRecordFailure = (query: string): Promise<QueryResults> =>
+      cachedSearch(query, depth, recencyDays, opts.bypassCache)
+        .then((results) => ({ query, results }))
+        .catch((e: unknown) => {
+          errors.push(`${query}: ${e instanceof Error ? e.message : String(e)}`);
+          return { query, results: [] };
+        });
+    const picked = pickResults(await Promise.all(queries.map(searchOrRecordFailure)), shownUrls);
+    const withinBudget = takeWithinTokens(picked, tokensLeftThisTurn);
+    const results = withinBudget.map((result) => ({ ...result, n: ++citationNumberWithinTurn }));
+    tokensLeftThisTurn -= estimateTokens(JSON.stringify(results));
+    if (results.length < picked.length) errors.push(SEARCH_BUDGET_USED_UP);
+    for (const result of results) {
+      shownUrls.add(result.url);
+      opts.onResult(result);
+    }
+    return { results, errors, searched_at: now().toISOString() };
+  }
+
+  const followUpTool = tool({
     description:
       'Search the web. Pass 1 to 4 queries; they run in parallel. Each result has a number n: cite it as [n].',
     inputSchema: z.object({
@@ -117,26 +148,8 @@ export function createWebSearchTool(opts: {
       recency_days: z.number().int().positive().nullish().describe('Only results from the last N days, e.g. 30 for news'),
       depth: z.enum(['basic', 'advanced']).nullish(),
     }),
-    execute: async ({ queries, recency_days, depth }) => {
-      opts.onStatus(`Searching: ${queries.join(', ')}…`);
-      const errors: string[] = [];
-      const searchOrRecordFailure = (query: string): Promise<QueryResults> =>
-        cachedSearch(query, depth ?? 'basic', recency_days ?? undefined, opts.bypassCache)
-          .then((results) => ({ query, results }))
-          .catch((e: unknown) => {
-            errors.push(`${query}: ${e instanceof Error ? e.message : String(e)}`);
-            return { query, results: [] };
-          });
-      const picked = pickResults(await Promise.all(queries.map(searchOrRecordFailure)), shownUrls);
-      const withinBudget = takeWithinTokens(picked, tokensLeftThisTurn);
-      const results = withinBudget.map((result) => ({ ...result, n: ++citationNumberWithinTurn }));
-      tokensLeftThisTurn -= estimateTokens(JSON.stringify(results));
-      if (results.length < picked.length) errors.push(SEARCH_BUDGET_USED_UP);
-      for (const result of results) {
-        shownUrls.add(result.url);
-        opts.onResult(result);
-      }
-      return { results, errors, searched_at: now().toISOString() };
-    },
+    execute: ({ queries, recency_days, depth }) => search(queries, depth ?? 'basic', recency_days ?? undefined),
   });
+
+  return { search, followUpTool };
 }
