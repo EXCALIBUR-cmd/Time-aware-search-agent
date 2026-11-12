@@ -1,7 +1,7 @@
 import { groq } from '@ai-sdk/groq';
 import { generateText } from 'ai';
 import { z } from 'zod';
-import { getConfig } from '../config';
+import { FAST_MODEL_PROVIDER_OPTIONS, getConfig } from '../config';
 
 export type Mode = 'chat' | 'fresh' | 'recall' | 'reverify';
 
@@ -27,6 +27,7 @@ export async function route(text: string, hasPastDate: boolean): Promise<Mode> {
   try {
     const { text: out } = await generateText({
       model: groq(getConfig().FAST_MODEL),
+      providerOptions: FAST_MODEL_PROVIDER_OPTIONS,
       system: SYSTEM,
       prompt: text,
       temperature: 0,

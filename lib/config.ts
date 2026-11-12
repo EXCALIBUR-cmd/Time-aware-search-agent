@@ -9,6 +9,8 @@ const schema = z.object({
   FAST_MODEL: z.string().default('openai/gpt-oss-20b'),
 });
 
+export const FAST_MODEL_PROVIDER_OPTIONS = { groq: { reasoningEffort: 'low' } };
+
 export function getConfig() {
   const parsed = schema.safeParse({
     GROQ_API_KEY: env('GROQ_API_KEY'),
