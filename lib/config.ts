@@ -9,7 +9,7 @@ const schema = z.object({
   FAST_MODEL: z.string().default('openai/gpt-oss-20b'),
 });
 
-export const FAST_MODEL_PROVIDER_OPTIONS = { groq: { reasoningEffort: 'low' } };
+export const FAST_MODEL_PROVIDER_OPTIONS = { groq: { reasoningEffort: 'low', reasoningFormat: 'hidden' } };
 
 export function getConfig() {
   const parsed = schema.safeParse({
