@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS user_facts (
   updated_at TEXT NOT NULL
 );`;
 
-const SCHEMA = `
+const IDEMPOTENT_SCHEMA = `
 CREATE TABLE IF NOT EXISTS conversations (
   id TEXT PRIMARY KEY,
   title TEXT,
@@ -48,28 +48,35 @@ CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(
 
 let db: Database.Database | undefined;
 
+function addDemoFlagToOlderDatabases(opened: Database.Database): void {
+  const columns = opened.pragma('table_info(conversations)') as { name: string }[];
+  if (columns.some((c) => c.name === 'is_demo')) return;
+  opened.exec('ALTER TABLE conversations ADD COLUMN is_demo INTEGER NOT NULL DEFAULT 0');
+}
+
+function keepUserFactHistoryInOlderDatabases(opened: Database.Database): void {
+  const columns = opened.pragma('table_info(user_facts)') as { name: string; pk: number }[];
+  const holdsOnlyOneRowPerKey = columns.some((c) => c.name === 'key' && c.pk > 0);
+  if (!holdsOnlyOneRowPerKey) return;
+  opened.transaction(() =>
+    opened.exec(`
+      ALTER TABLE user_facts RENAME TO user_facts_old;
+      ${USER_FACTS}
+      INSERT INTO user_facts SELECT key, value, source_message_id, updated_at FROM user_facts_old;
+      DROP TABLE user_facts_old;`),
+  )();
+}
+
 export function openDb(file = dbPath()): Database.Database {
   if (file !== ':memory:') mkdirSync(dirname(file), { recursive: true });
-  db = new Database(file);
-  db.pragma('journal_mode = WAL');
-  db.pragma('foreign_keys = ON');
-  db.exec(SCHEMA);
-  const columns = db.pragma('table_info(conversations)') as { name: string }[];
-  if (!columns.some((c) => c.name === 'is_demo')) {
-    db.exec('ALTER TABLE conversations ADD COLUMN is_demo INTEGER NOT NULL DEFAULT 0');
-  }
-  const factColumns = db.pragma('table_info(user_facts)') as { name: string; pk: number }[];
-  if (factColumns.some((c) => c.name === 'key' && c.pk > 0)) {
-    const opened = db;
-    opened.transaction(() =>
-      opened.exec(`
-        ALTER TABLE user_facts RENAME TO user_facts_old;
-        ${USER_FACTS}
-        INSERT INTO user_facts SELECT key, value, source_message_id, updated_at FROM user_facts_old;
-        DROP TABLE user_facts_old;`),
-    )();
-  }
-  return db;
+  const opened = new Database(file);
+  db = opened;
+  opened.pragma('journal_mode = WAL');
+  opened.pragma('foreign_keys = ON');
+  opened.exec(IDEMPOTENT_SCHEMA);
+  addDemoFlagToOlderDatabases(opened);
+  keepUserFactHistoryInOlderDatabases(opened);
+  return opened;
 }
 
 export const getDb = (): Database.Database => db ?? openDb();

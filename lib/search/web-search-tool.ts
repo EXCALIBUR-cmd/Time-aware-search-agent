@@ -17,7 +17,8 @@ async function cachedSearch(query: string, depth: Depth, recencyDays: number | u
   const hit = db.prepare('SELECT results_json, fetched_at FROM search_cache WHERE query_key = ?').get(key) as
     | { results_json: string; fetched_at: string }
     | undefined;
-  if (hit && !bypassCache && Date.now() - Date.parse(hit.fetched_at) < cacheLifetime(query)) {
+  const ageByRealClock = hit ? Date.now() - Date.parse(hit.fetched_at) : Infinity;
+  if (hit && !bypassCache && ageByRealClock < cacheLifetime(query)) {
     return JSON.parse(hit.results_json) as SearchResult[];
   }
   const results = await tavilySearch(query, depth, recencyDays);
@@ -34,7 +35,7 @@ export function createWebSearchTool(opts: {
   onStatus: (text: string) => void;
   onResult: (result: NumberedResult) => void;
 }) {
-  let n = 0;
+  let citationNumberWithinTurn = 0;
   const seen = new Set<string>();
   return tool({
     description:
@@ -47,19 +48,17 @@ export function createWebSearchTool(opts: {
     execute: async ({ queries, recency_days, depth }) => {
       opts.onStatus(`Searching: ${queries.join(', ')}…`);
       const errors: string[] = [];
-      const batches = await Promise.all(
-        queries.map((q) =>
-          cachedSearch(q, depth ?? 'basic', recency_days ?? undefined, opts.bypassCache).catch((e: unknown) => {
-            errors.push(`${q}: ${e instanceof Error ? e.message : String(e)}`);
-            return [] as SearchResult[];
-          }),
-        ),
-      );
+      const searchOrRecordFailure = (q: string) =>
+        cachedSearch(q, depth ?? 'basic', recency_days ?? undefined, opts.bypassCache).catch((e: unknown) => {
+          errors.push(`${q}: ${e instanceof Error ? e.message : String(e)}`);
+          return [] as SearchResult[];
+        });
+      const batches = await Promise.all(queries.map(searchOrRecordFailure));
       const results: NumberedResult[] = [];
       for (const r of batches.flat()) {
         if (seen.has(r.url)) continue;
         seen.add(r.url);
-        const numbered = { ...r, n: ++n, content: r.content.slice(0, MAX_CHARS) };
+        const numbered = { ...r, n: ++citationNumberWithinTurn, content: r.content.slice(0, MAX_CHARS) };
         results.push(numbered);
         opts.onResult(numbered);
       }

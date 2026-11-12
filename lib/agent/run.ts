@@ -45,13 +45,15 @@ export function runAgent({
       if (aboutPast) {
         status(`Checking memory${ranges.length ? ` for ${[...new Set(ranges.map((r) => r.phrase))].join(', ')}` : ''}…`);
       }
-      const dateRanges = aboutPast ? ranges : [];
+      const rangesWhenAboutPast = aboutPast ? ranges : [];
       const ownTerms = topicTerms(text);
-      const terms = ownTerms.length ? ownTerms : topicTerms(history.findLast((m) => m.role === 'user')?.content ?? '');
-      const items = recall({ ranges: dateRanges, topicTerms: terms, now: at, excludeConversationId: conversationId });
-      const memory = items.length || aboutPast ? formatMemory(items, dateRanges, zone) : '';
+      const previousQuestion = history.findLast((m) => m.role === 'user')?.content ?? '';
+      const terms = ownTerms.length ? ownTerms : topicTerms(previousQuestion);
+      const items = recall({ ranges: rangesWhenAboutPast, topicTerms: terms, now: at, excludeConversationId: conversationId });
+      const memory = items.length || aboutPast ? formatMemory(items, rangesWhenAboutPast, zone) : '';
       const claimCount = items.reduce((sum, m) => sum + m.claims.length, 0);
-      if (mode === 'reverify' && !items.length) mode = 'recall';
+      const nothingToReverify = mode === 'reverify' && !items.length;
+      if (nothingToReverify) mode = 'recall';
       const reverify = mode === 'reverify';
 
       const sources: NumberedResult[] = [];

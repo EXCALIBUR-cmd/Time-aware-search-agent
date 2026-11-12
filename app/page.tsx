@@ -12,7 +12,22 @@ type Stored = { id: string; role: 'user' | 'assistant'; content: string };
 const transport = new DefaultChatTransport({ api: '/api/chat' });
 const DEV = process.env.NODE_ENV === 'development';
 const CLOCK_KEY = 'simulatedNow';
-const toLocalInput = (d: Date) => new Date(d.getTime() - d.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+const toDatetimeLocalValue = (d: Date) => new Date(d.getTime() - d.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+const readRememberedClock = () => {
+  try {
+    return localStorage.getItem(CLOCK_KEY) ?? '';
+  } catch {
+    return '';
+  }
+};
+const rememberClockIfStorageAllows = (value: string) => {
+  try {
+    if (value) localStorage.setItem(CLOCK_KEY, value);
+    else localStorage.removeItem(CLOCK_KEY);
+  } catch {
+    return;
+  }
+};
 const day = (iso: string) =>
   new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
 const host = (url: string) => {
@@ -76,18 +91,14 @@ export default function Page() {
   const [realNow, setRealNow] = useState('');
   useEffect(() => {
     if (!DEV) return;
-    setRealNow(toLocalInput(new Date()));
-    try {
-      setSimulated(localStorage.getItem(CLOCK_KEY) ?? '');
-    } catch {}
+    setRealNow(toDatetimeLocalValue(new Date()));
+    setSimulated(readRememberedClock());
   }, []);
   function setClock(value: string) {
-    const next = value && value < toLocalInput(new Date()) ? value : '';
-    setSimulated(next);
-    try {
-      if (next) localStorage.setItem(CLOCK_KEY, next);
-      else localStorage.removeItem(CLOCK_KEY);
-    } catch {}
+    const isInThePast = value !== '' && value < toDatetimeLocalValue(new Date());
+    const pastTimeOrRealTime = isInThePast ? value : '';
+    setSimulated(pastTimeOrRealTime);
+    rememberClockIfStorageAllows(pastTimeOrRealTime);
   }
 
   useEffect(() => {
@@ -107,9 +118,10 @@ export default function Page() {
       .catch(() => {});
   }, [chatId]);
 
-  useEffect(() => {
+  const scrollToBottomReturningNothing = (): void => {
     bottom.current?.scrollIntoView();
-  }, [messages, statusLine]);
+  };
+  useEffect(scrollToBottomReturningNothing, [messages, statusLine]);
 
   function submit(e: FormEvent) {
     e.preventDefault();
@@ -157,7 +169,7 @@ export default function Page() {
                 type="datetime-local"
                 value={simulated || realNow}
                 max={realNow}
-                onFocus={() => setRealNow(toLocalInput(new Date()))}
+                onFocus={() => setRealNow(toDatetimeLocalValue(new Date()))}
                 onChange={(e) => setClock(e.target.value)}
                 className="rounded border border-zinc-300 px-2 py-1 text-zinc-900"
               />

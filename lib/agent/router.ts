@@ -22,19 +22,23 @@ export function applyOverrides(mode: Mode, text: string, hasPastDate: boolean): 
   return MEMORY_PHRASE.test(text) ? 'recall' : mode;
 }
 
+const ROUTER_TIMEOUT_MS = 1500;
+const MODE_WHEN_ROUTER_FAILS: Mode = 'fresh';
+
+async function askModelForMode(text: string): Promise<Mode> {
+  const { text: out } = await generateText({
+    model: groq(getConfig().FAST_MODEL),
+    providerOptions: FAST_MODEL_PROVIDER_OPTIONS,
+    system: SYSTEM,
+    prompt: text,
+    temperature: 0,
+    maxRetries: 0,
+    abortSignal: AbortSignal.timeout(ROUTER_TIMEOUT_MS),
+  });
+  return Output.parse(JSON.parse(out.match(/\{[\s\S]*\}/)?.[0] ?? '')).mode;
+}
+
 export async function route(text: string, hasPastDate: boolean): Promise<Mode> {
-  let mode: Mode = 'fresh';
-  try {
-    const { text: out } = await generateText({
-      model: groq(getConfig().FAST_MODEL),
-      providerOptions: FAST_MODEL_PROVIDER_OPTIONS,
-      system: SYSTEM,
-      prompt: text,
-      temperature: 0,
-      maxRetries: 0,
-      abortSignal: AbortSignal.timeout(1500),
-    });
-    mode = Output.parse(JSON.parse(out.match(/\{[\s\S]*\}/)?.[0] ?? '')).mode;
-  } catch {}
+  const mode = await askModelForMode(text).catch(() => MODE_WHEN_ROUTER_FAILS);
   return applyOverrides(mode, text, hasPastDate);
 }

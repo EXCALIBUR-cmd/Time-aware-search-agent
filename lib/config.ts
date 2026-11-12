@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-const env = (name: string) => process.env[name]?.trim() || undefined;
+const nonBlankEnv = (name: string) => process.env[name]?.trim() || undefined;
 
 const schema = z.object({
   GROQ_API_KEY: z.string(),
@@ -13,10 +13,10 @@ export const FAST_MODEL_PROVIDER_OPTIONS = { groq: { reasoningEffort: 'low', rea
 
 export function getConfig() {
   const parsed = schema.safeParse({
-    GROQ_API_KEY: env('GROQ_API_KEY'),
-    TAVILY_API_KEY: env('TAVILY_API_KEY'),
-    MAIN_MODEL: env('MAIN_MODEL'),
-    FAST_MODEL: env('FAST_MODEL'),
+    GROQ_API_KEY: nonBlankEnv('GROQ_API_KEY'),
+    TAVILY_API_KEY: nonBlankEnv('TAVILY_API_KEY'),
+    MAIN_MODEL: nonBlankEnv('MAIN_MODEL'),
+    FAST_MODEL: nonBlankEnv('FAST_MODEL'),
   });
   if (!parsed.success) {
     const keys = parsed.error.issues.map((i) => i.path.join('.')).join(', ');
@@ -26,12 +26,12 @@ export function getConfig() {
 }
 
 export function now(): Date {
-  const fixed = env('AGENT_NOW');
+  const fixed = nonBlankEnv('AGENT_NOW');
   const d = fixed ? new Date(fixed) : new Date();
   if (Number.isNaN(d.getTime())) throw new Error(`AGENT_NOW is not a valid ISO date: ${fixed}`);
   return d;
 }
 
-export const tz = () => env('AGENT_TZ') ?? 'Asia/Kolkata';
+export const tz = () => nonBlankEnv('AGENT_TZ') ?? 'Asia/Kolkata';
 
-export const dbPath = () => env('DB_PATH') ?? 'data/agent.db';
+export const dbPath = () => nonBlankEnv('DB_PATH') ?? 'data/agent.db';

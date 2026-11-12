@@ -3,10 +3,14 @@ import type { TimeRange } from '../time/resolve';
 import type { MemoryItem } from './recall';
 import type { UserFact } from './store';
 
+const FULL_EXCERPT_CHARS = 1500;
+const SHORT_EXCERPT_CHARS = 400;
+const ITEMS_BEFORE_SHORTENING = 8;
+
 const day = (d: Date | string, tz: string) => formatInTimeZone(d, tz, 'd MMM yyyy');
 
 export function formatMemory(items: MemoryItem[], ranges: TimeRange[], tz: string): string {
-  const excerpt = items.length > 8 ? 400 : 1500;
+  const excerpt = items.length > ITEMS_BEFORE_SHORTENING ? SHORT_EXCERPT_CHARS : FULL_EXCERPT_CHARS;
   const lines = (match: MemoryItem['match']) =>
     items
       .filter((m) => m.match === match)

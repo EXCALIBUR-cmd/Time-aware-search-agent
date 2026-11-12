@@ -2,9 +2,14 @@ import { randomUUID } from 'node:crypto';
 import { runAgent } from '../lib/agent/run';
 import { DEMO_NOW } from './seed';
 
-try {
-  process.loadEnvFile();
-} catch {}
+function loadEnvFileIfPresent(): void {
+  try {
+    process.loadEnvFile();
+  } catch {
+    return;
+  }
+}
+loadEnvFileIfPresent();
 
 process.env.AGENT_NOW = DEMO_NOW;
 

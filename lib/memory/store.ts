@@ -6,10 +6,10 @@ export type Claim = { subject: string; attribute: string; value: string; sourceU
 export type StoredMessage = { id: string; role: Role; content: string; created_at: string };
 export type Conversation = { id: string; title: string; created_at: string; is_demo: 0 | 1 };
 
-const index = (text: string, kind: 'message' | 'claim', refId: string, at: string) =>
+const index = (text: string, kind: 'message' | 'claim', recalledMessageId: string, at: string) =>
   getDb()
     .prepare('INSERT INTO memory_fts (text, kind, ref_id, created_at) VALUES (?, ?, ?, ?)')
-    .run(text, kind, refId, at);
+    .run(text, kind, recalledMessageId, at);
 
 export function saveMessage(m: {
   id?: string;
