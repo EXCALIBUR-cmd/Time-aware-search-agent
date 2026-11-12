@@ -164,21 +164,24 @@ export function runAgent({
         system: joinSections([...promptWithoutResults, searched ? formatSearchResults(searched) : '']),
         tools: searchesTheWeb ? { web_search: session.followUpTool } : NO_TOOLS,
       });
-      const outcome = await forwardAnswer(mainAnswer, writer, { continuesOpenMessage: false, stopOnRateLimit: true });
+      const outcome = await forwardAnswer(mainAnswer, writer, { continuesOpenMessage: false, handsOver: true });
       if (outcome === 'answered') return;
 
-      status(FALLING_BACK_STATUS);
-      writer.write({ type: 'data-notice', data: SMALLER_MODEL_NOTICE });
+      const mainModelIsRateLimited = outcome === 'rate-limited';
+      if (mainModelIsRateLimited) {
+        status(FALLING_BACK_STATUS);
+        writer.write({ type: 'data-notice', data: SMALLER_MODEL_NOTICE });
+      }
       const everythingFoundThisTurn = sources.length
         ? formatSearchResults({ results: sources, errors: [], searched_at: now().toISOString() })
         : '';
-      const fallbackAnswer = answerWith({
-        modelId: cfg.FAST_MODEL,
-        providerOptions: FAST_MODEL_PROVIDER_OPTIONS,
+      const answerWithoutTools = answerWith({
+        modelId: mainModelIsRateLimited ? cfg.FAST_MODEL : cfg.MAIN_MODEL,
+        providerOptions: mainModelIsRateLimited ? FAST_MODEL_PROVIDER_OPTIONS : undefined,
         system: joinSections([...promptWithoutResults, everythingFoundThisTurn, ANSWER_WITHOUT_SEARCHING_AGAIN]),
         tools: NO_TOOLS,
       });
-      await forwardAnswer(fallbackAnswer, writer, { continuesOpenMessage: true, stopOnRateLimit: false });
+      await forwardAnswer(answerWithoutTools, writer, { continuesOpenMessage: true, handsOver: false });
     },
   });
 }

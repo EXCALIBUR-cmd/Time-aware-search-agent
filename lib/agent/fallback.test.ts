@@ -1,7 +1,7 @@
 import type { UIMessageChunk } from 'ai';
 import { expect, test } from 'vitest';
 import { BUSY_MESSAGE, isRateLimited } from './budget';
-import { forwardAnswer, type AnswerStream } from './fallback';
+import { forwardAnswer, handOverReasonFor, type AnswerStream } from './fallback';
 
 const RATE_LIMIT_AFTER_RETRY = new Error(
   'Failed after 2 attempts. Last error: Rate limit reached for model `openai/gpt-oss-120b` on tokens per minute (TPM): Limit 8000, Used 4467, Requested 4159. Please try again in 4.695s.',
@@ -43,7 +43,7 @@ test('only a 429 counts as rate limited; a too-large request does not', () => {
 
 test('a normal answer is forwarded chunk by chunk', async () => {
   const { written, sink } = collect();
-  const outcome = await forwardAnswer(answerThat(textChunks('hello')), sink, { continuesOpenMessage: false, stopOnRateLimit: true });
+  const outcome = await forwardAnswer(answerThat(textChunks('hello')), sink, { continuesOpenMessage: false, handsOver: true });
   expect(outcome).toBe('answered');
   expect(written.map((c) => c.type)).toEqual(['text-start', 'text-delta', 'text-end']);
 });
@@ -51,27 +51,39 @@ test('a normal answer is forwarded chunk by chunk', async () => {
 test('a rate-limited main model hands over without showing its error', async () => {
   const { written, sink } = collect();
   const main = answerThat([{ type: 'start' }], RATE_LIMIT_AFTER_RETRY);
-  const outcome = await forwardAnswer(main, sink, { continuesOpenMessage: false, stopOnRateLimit: true });
+  const outcome = await forwardAnswer(main, sink, { continuesOpenMessage: false, handsOver: true });
   expect(outcome).toBe('rate-limited');
   expect(written.map((c) => c.type)).toEqual(['start']);
   expect(main.sawSendStart).toBe(true);
 
   const fallback = answerThat(textChunks('answer from the smaller model'));
-  expect(await forwardAnswer(fallback, sink, { continuesOpenMessage: true, stopOnRateLimit: false })).toBe('answered');
+  expect(await forwardAnswer(fallback, sink, { continuesOpenMessage: true, handsOver: false })).toBe('answered');
   expect(fallback.sawSendStart).toBe(false);
   expect(written.map((c) => c.type)).toEqual(['start', 'text-start', 'text-delta', 'text-end']);
 });
 
 test('if the smaller model is rate limited too, the friendly message is shown', async () => {
   const { written, sink } = collect();
-  const outcome = await forwardAnswer(answerThat([], RATE_LIMIT_AFTER_RETRY), sink, { continuesOpenMessage: true, stopOnRateLimit: false });
+  const outcome = await forwardAnswer(answerThat([], RATE_LIMIT_AFTER_RETRY), sink, { continuesOpenMessage: true, handsOver: false });
   expect(outcome).toBe('answered');
   expect(written).toEqual([{ type: 'error', errorText: BUSY_MESSAGE }]);
 });
 
 test('other failures of the main model are shown, not handed over', async () => {
   const { written, sink } = collect();
-  const outcome = await forwardAnswer(answerThat([], TOO_LARGE), sink, { continuesOpenMessage: false, stopOnRateLimit: true });
+  const outcome = await forwardAnswer(answerThat([], TOO_LARGE), sink, { continuesOpenMessage: false, handsOver: true });
   expect(outcome).toBe('answered');
   expect(written).toEqual([{ type: 'error', errorText: BUSY_MESSAGE }]);
+});
+
+test('a model that searches when it has no searches left hands over for a plain answer', async () => {
+  const groqRefusal = { message: 'Tool choice is none, but model called a tool', type: 'invalid_request_error' };
+  expect(handOverReasonFor(groqRefusal)).toBe('searched-when-not-allowed');
+  expect(handOverReasonFor(RATE_LIMIT_AFTER_RETRY)).toBe('rate-limited');
+  expect(handOverReasonFor(TOO_LARGE)).toBeUndefined();
+
+  const { written, sink } = collect();
+  const main = answerThat([{ type: 'start' }], groqRefusal);
+  expect(await forwardAnswer(main, sink, { continuesOpenMessage: false, handsOver: true })).toBe('searched-when-not-allowed');
+  expect(written.map((c) => c.type)).toEqual(['start']);
 });
