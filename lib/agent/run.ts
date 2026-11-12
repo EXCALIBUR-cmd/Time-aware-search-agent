@@ -1,6 +1,6 @@
 import { groq } from '@ai-sdk/groq';
 import { createUIMessageStream, stepCountIs, streamText, type ToolSet } from 'ai';
-import { getConfig, now, tz } from '../config';
+import { FAST_MODEL_PROVIDER_OPTIONS, getConfig, now, tz } from '../config';
 import { extractClaims, extractUserFacts, mentionsSelf } from '../memory/extract';
 import { formatMemory, formatProfile } from '../memory/format';
 import { recall, topicTerms, type MemoryItem } from '../memory/recall';
@@ -15,6 +15,7 @@ import {
   TOKEN_BUDGET,
   userFacingError,
 } from './budget';
+import { forwardAnswer, SMALLER_MODEL_NOTICE } from './fallback';
 import { buildInstructions } from './prompt';
 import { route } from './router';
 
@@ -22,14 +23,17 @@ const FOLLOW_UP_SEARCHES = 1;
 const MAX_QUERIES_PER_SEARCH = 4;
 const HISTORY_TURNS = 12;
 const RETRIES_AFTER_GROQ_WAIT = 1;
+const NO_TOOLS: ToolSet = {};
 const ANSWER_WITHOUT_SEARCHING_AGAIN =
   'You have no searches left this turn. Answer now from the results you already have; do not call any tool.';
+const FALLING_BACK_STATUS = 'The main model is rate limited: answering with the smaller model…';
 const logFailure = (what: string) => (e: unknown) => console.error(`${what} failed:`, errorMessage(e));
 const logRawErrorAndDescribeForUser = (e: unknown) => {
   console.error('[agent] turn failed:', errorMessage(e));
   return userFacingError(e);
 };
 
+const joinSections = (sections: string[]) => sections.filter(Boolean).join('\n\n');
 const claimsIn = (items: MemoryItem[]) => items.flatMap((item) => item.claims);
 const subjectsIn = (items: MemoryItem[]) => [...new Set(claimsIn(items).map((claim) => claim.subject))];
 
@@ -102,6 +106,7 @@ export function runAgent({
         searchResults: [],
       });
       const tokensLeftForSearch = Math.min(TOKEN_BUDGET.searchResults, TOKEN_BUDGET.total - estimatePromptTokens(prompt));
+      const promptWithoutResults = [prompt.instructions, prompt.profile, prompt.memory];
 
       const sources: NumberedResult[] = [];
       const session = createSearchSession({
@@ -116,42 +121,64 @@ export function runAgent({
       const searched = searchedAlready ? await session.search(plannedQueries) : undefined;
       if (searched && reverify) status(`Comparing ${claimsIn(items).length} claims…`);
 
-      const system = [prompt.instructions, prompt.profile, prompt.memory, searched ? formatSearchResults(searched) : '']
-        .filter(Boolean)
-        .join('\n\n');
-      const tools: ToolSet = searchesTheWeb ? { web_search: session.followUpTool } : {};
+      const answerWith = (answer: {
+        modelId: string;
+        system: string;
+        tools: ToolSet;
+        providerOptions?: typeof FAST_MODEL_PROVIDER_OPTIONS;
+      }) =>
+        streamText({
+          model: groq(answer.modelId),
+          providerOptions: answer.providerOptions,
+          system: answer.system,
+          messages: [...prompt.history, { role: 'user', content: text }],
+          tools: answer.tools,
+          maxRetries: RETRIES_AFTER_GROQ_WAIT,
+          stopWhen: stepCountIs(FOLLOW_UP_SEARCHES + 1),
+          prepareStep: ({ stepNumber, messages }) => {
+            const outOfSearches = stepNumber >= FOLLOW_UP_SEARCHES;
+            const stepSystem = outOfSearches ? joinSections([answer.system, ANSWER_WITHOUT_SEARCHING_AGAIN]) : answer.system;
+            logPromptSize(`${answer.modelId} answer, step ${stepNumber + 1}`, stepSystem, messages);
+            return outOfSearches ? { toolChoice: 'none' as const, system: stepSystem } : {};
+          },
+          onError: ({ error }) => console.error('[agent] model call failed:', errorMessage(error)),
+          onFinish: ({ steps }) => {
+            if (mentionsSelf(text)) {
+              void extractUserFacts(text)
+                .then((facts) => saveUserFacts(facts, userMessageId, at))
+                .catch(logFailure('user fact extraction'));
+            }
+            const answerText = steps.map((s) => s.text).join('').trim();
+            if (!answerText) return;
+            const id = saveMessage({ conversationId, role: 'assistant', content: answerText, at: clock() });
+            if (sources.length) {
+              void extractClaims(answerText, sources)
+                .then((claims) => saveClaims(id, claims, clock()))
+                .catch(logFailure('claim extraction'));
+            }
+          },
+        });
 
-      const result = streamText({
-        model: groq(cfg.MAIN_MODEL),
-        system,
-        messages: [...prompt.history, { role: 'user', content: text }],
-        tools,
-        maxRetries: RETRIES_AFTER_GROQ_WAIT,
-        stopWhen: stepCountIs(FOLLOW_UP_SEARCHES + 1),
-        prepareStep: ({ stepNumber, messages }) => {
-          const outOfSearches = stepNumber >= FOLLOW_UP_SEARCHES;
-          const stepSystem = outOfSearches ? `${system}\n\n${ANSWER_WITHOUT_SEARCHING_AGAIN}` : system;
-          logPromptSize(`${cfg.MAIN_MODEL} answer, step ${stepNumber + 1}`, stepSystem, messages);
-          return outOfSearches ? { toolChoice: 'none' as const, system: stepSystem } : {};
-        },
-        onError: ({ error }) => console.error('[agent] model call failed:', errorMessage(error)),
-        onFinish: ({ steps }) => {
-          if (mentionsSelf(text)) {
-            void extractUserFacts(text)
-              .then((facts) => saveUserFacts(facts, userMessageId, at))
-              .catch(logFailure('user fact extraction'));
-          }
-          const answer = steps.map((s) => s.text).join('').trim();
-          if (!answer) return;
-          const id = saveMessage({ conversationId, role: 'assistant', content: answer, at: clock() });
-          if (sources.length) {
-            void extractClaims(answer, sources)
-              .then((claims) => saveClaims(id, claims, clock()))
-              .catch(logFailure('claim extraction'));
-          }
-        },
+      const mainAnswer = answerWith({
+        modelId: cfg.MAIN_MODEL,
+        system: joinSections([...promptWithoutResults, searched ? formatSearchResults(searched) : '']),
+        tools: searchesTheWeb ? { web_search: session.followUpTool } : NO_TOOLS,
       });
-      writer.merge(result.toUIMessageStream({ onError: userFacingError, sendReasoning: false }));
+      const outcome = await forwardAnswer(mainAnswer, writer, { continuesOpenMessage: false, stopOnRateLimit: true });
+      if (outcome === 'answered') return;
+
+      status(FALLING_BACK_STATUS);
+      writer.write({ type: 'data-notice', data: SMALLER_MODEL_NOTICE });
+      const everythingFoundThisTurn = sources.length
+        ? formatSearchResults({ results: sources, errors: [], searched_at: now().toISOString() })
+        : '';
+      const fallbackAnswer = answerWith({
+        modelId: cfg.FAST_MODEL,
+        providerOptions: FAST_MODEL_PROVIDER_OPTIONS,
+        system: joinSections([...promptWithoutResults, everythingFoundThisTurn, ANSWER_WITHOUT_SEARCHING_AGAIN]),
+        tools: NO_TOOLS,
+      });
+      await forwardAnswer(fallbackAnswer, writer, { continuesOpenMessage: true, stopOnRateLimit: false });
     },
   });
 }

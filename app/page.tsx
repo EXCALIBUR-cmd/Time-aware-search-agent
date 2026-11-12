@@ -41,6 +41,7 @@ const host = (url: string) => {
 function Message({ message }: { message: UIMessage }) {
   const text = message.parts.map((p) => (p.type === 'text' ? p.text : '')).join('');
   const sources = message.parts.filter((p) => p.type === 'source-url');
+  const notice = message.parts.flatMap((p) => (p.type === 'data-notice' ? [String(p.data)] : []))[0];
   if (message.role === 'user') {
     return <div className="ml-auto w-fit max-w-[85%] whitespace-pre-wrap rounded-2xl bg-zinc-100 px-4 py-2">{text}</div>;
   }
@@ -68,6 +69,7 @@ function Message({ message }: { message: UIMessage }) {
           ))}
         </div>
       )}
+      {notice && <p className="text-xs text-zinc-500">{notice}</p>}
     </div>
   );
 }

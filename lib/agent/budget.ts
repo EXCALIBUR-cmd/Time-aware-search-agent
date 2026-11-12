@@ -9,6 +9,8 @@ export const TOKEN_BUDGET = {
 export const CHARS_PER_TOKEN = 4;
 const TRUNCATION_MARK = '…';
 const RATE_LIMITED_OR_TOO_LARGE = /rate limit|too large|tokens per minute|\b(429|413)\b/i;
+const RATE_LIMITED = /rate limit|\b429\b/i;
+const TOO_LARGE = /too large|\b413\b/i;
 
 export const BUSY_MESSAGE = 'The model is at its rate limit right now. Please wait a minute and try again.';
 
@@ -89,6 +91,11 @@ export function errorMessage(error: unknown): string {
   if (typeof error === 'string') return error;
   if (typeof error === 'object' && error !== null && 'message' in error) return String(error.message);
   return JSON.stringify(error);
+}
+
+export function isRateLimited(error: unknown): boolean {
+  const raw = errorMessage(error);
+  return RATE_LIMITED.test(raw) && !TOO_LARGE.test(raw);
 }
 
 export function userFacingError(error: unknown): string {
