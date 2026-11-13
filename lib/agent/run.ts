@@ -15,14 +15,14 @@ import {
   TOKEN_BUDGET,
   userFacingError,
 } from './budget';
-import { forwardAnswer, SMALLER_MODEL_NOTICE } from './fallback';
+import { forwardAnswer, SMALLER_MODEL_NOTICE, worthWaitingFor } from './fallback';
 import { buildInstructions } from './prompt';
 import { route } from './router';
 
 const FOLLOW_UP_SEARCHES = 1;
 const MAX_QUERIES_PER_SEARCH = 4;
 const HISTORY_TURNS = 12;
-const RETRIES_AFTER_GROQ_WAIT = 1;
+const RETRIES_BY_THE_SDK = 0;
 const NO_TOOLS: ToolSet = {};
 const ANSWER_WITHOUT_SEARCHING_AGAIN =
   'You have no searches left this turn. Answer now from the results you already have; do not call any tool.';
@@ -34,6 +34,7 @@ const logRawErrorAndDescribeForUser = (e: unknown) => {
 };
 
 const joinSections = (sections: string[]) => sections.filter(Boolean).join('\n\n');
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const claimsIn = (items: MemoryItem[]) => items.flatMap((item) => item.claims);
 const subjectsIn = (items: MemoryItem[]) => [...new Set(claimsIn(items).map((claim) => claim.subject))];
 
@@ -133,7 +134,7 @@ export function runAgent({
           system: answer.system,
           messages: [...prompt.history, { role: 'user', content: text }],
           tools: answer.tools,
-          maxRetries: RETRIES_AFTER_GROQ_WAIT,
+          maxRetries: RETRIES_BY_THE_SDK,
           stopWhen: stepCountIs(FOLLOW_UP_SEARCHES + 1),
           prepareStep: ({ stepNumber, messages }) => {
             const outOfSearches = stepNumber >= FOLLOW_UP_SEARCHES;
@@ -159,29 +160,43 @@ export function runAgent({
           },
         });
 
-      const mainAnswer = answerWith({
-        modelId: cfg.MAIN_MODEL,
-        system: joinSections([...promptWithoutResults, searched ? formatSearchResults(searched) : '']),
-        tools: searchesTheWeb ? { web_search: session.followUpTool } : NO_TOOLS,
-      });
-      const outcome = await forwardAnswer(mainAnswer, writer, { continuesOpenMessage: false, handsOver: true });
-      if (outcome === 'answered') return;
+      const answerFromMainModel = () =>
+        answerWith({
+          modelId: cfg.MAIN_MODEL,
+          system: joinSections([...promptWithoutResults, searched ? formatSearchResults(searched) : '']),
+          tools: searchesTheWeb ? { web_search: session.followUpTool } : NO_TOOLS,
+        });
+      const answerWithoutTools = (modelId: string, providerOptions?: typeof FAST_MODEL_PROVIDER_OPTIONS) => {
+        const everythingFoundThisTurn = sources.length
+          ? formatSearchResults({ results: sources, errors: [], searched_at: now().toISOString() })
+          : '';
+        return answerWith({
+          modelId,
+          providerOptions,
+          system: joinSections([...promptWithoutResults, everythingFoundThisTurn, ANSWER_WITHOUT_SEARCHING_AGAIN]),
+          tools: NO_TOOLS,
+        });
+      };
+      const usedItsFollowUpSearch = () => sources.length > (searched?.results.length ?? 0);
 
-      const mainModelIsRateLimited = outcome === 'rate-limited';
+      let outcome = await forwardAnswer(answerFromMainModel(), writer, { continuesOpenMessage: false, handsOver: true });
+      if (worthWaitingFor(outcome)) {
+        status(`The main model is busy: retrying in ${Math.ceil(outcome.retryAfterMs / 1000)} s…`);
+        await sleep(outcome.retryAfterMs);
+        const retry = usedItsFollowUpSearch() ? answerWithoutTools(cfg.MAIN_MODEL) : answerFromMainModel();
+        outcome = await forwardAnswer(retry, writer, { continuesOpenMessage: true, handsOver: true });
+      }
+      if (!outcome.reason) return;
+
+      const mainModelIsRateLimited = outcome.reason === 'rate-limited';
       if (mainModelIsRateLimited) {
         status(FALLING_BACK_STATUS);
         writer.write({ type: 'data-notice', data: SMALLER_MODEL_NOTICE });
       }
-      const everythingFoundThisTurn = sources.length
-        ? formatSearchResults({ results: sources, errors: [], searched_at: now().toISOString() })
-        : '';
-      const answerWithoutTools = answerWith({
-        modelId: mainModelIsRateLimited ? cfg.FAST_MODEL : cfg.MAIN_MODEL,
-        providerOptions: mainModelIsRateLimited ? FAST_MODEL_PROVIDER_OPTIONS : undefined,
-        system: joinSections([...promptWithoutResults, everythingFoundThisTurn, ANSWER_WITHOUT_SEARCHING_AGAIN]),
-        tools: NO_TOOLS,
-      });
-      await forwardAnswer(answerWithoutTools, writer, { continuesOpenMessage: true, handsOver: false });
+      const lastAnswer = mainModelIsRateLimited
+        ? answerWithoutTools(cfg.FAST_MODEL, FAST_MODEL_PROVIDER_OPTIONS)
+        : answerWithoutTools(cfg.MAIN_MODEL);
+      await forwardAnswer(lastAnswer, writer, { continuesOpenMessage: true, handsOver: false });
     },
   });
 }
