@@ -3,9 +3,11 @@ import { bestPassage, isVendorDomainFor, pickResults } from '../search/web-searc
 import type { SearchResult } from '../search/tavily';
 import {
   BUSY_MESSAGE,
+  CHAT_TEMPLATE_TOKENS_PER_REQUEST,
   estimatePromptTokens,
   estimateTokens,
   fitPromptToBudget,
+  SEARCH_TOOL_DEFINITION_TOKENS,
   TOKEN_BUDGET,
   userFacingError,
   type PromptParts,
@@ -13,6 +15,9 @@ import {
 } from './budget';
 
 const filler = (chars: number) => 'lorem ipsum dolor sit amet '.repeat(Math.ceil(chars / 27)).slice(0, chars);
+const WORD = ' apple';
+const tokensPerWord = estimateTokens(WORD.repeat(200)) / 200;
+const textOfTokens = (tokens: number) => WORD.repeat(Math.floor(tokens / tokensPerWord)).trim();
 const longResult = (query: number, rank: number): SearchResult => ({
   title: `Result ${rank} for query ${query}`,
   url: `https://site${query}-${rank}.example/page`,
@@ -41,7 +46,7 @@ test('20 long search results get trimmed to 8 within budget', () => {
 test('a long history keeps the newest turns', () => {
   const history: Turn[] = Array.from({ length: 12 }, (_, i) => ({
     role: i % 2 ? 'assistant' : 'user',
-    content: `turn ${i + 1} ${filler(1200)}`,
+    content: `turn ${i + 1} ${textOfTokens(290)}`,
   }));
   const fitted = fitPromptToBudget({ ...emptyPrompt, history });
   const keptTurnNumbers = fitted.history.map((turn) => Number(turn.content.split(' ')[1]));
@@ -57,7 +62,7 @@ test('a newest turn that is too long on its own is cut, not dropped', () => {
 
 test('memory and profile blocks are cut to their budgets and keep their closing tag', () => {
   const memory = ['<memory>', ...Array.from({ length: 40 }, (_, i) => `item ${i} ${filler(400)}`), '</memory>'].join('\n');
-  const fitted = fitPromptToBudget({ ...emptyPrompt, instructions: filler(2400), profile: `<user_profile>\nname: Asha\n${filler(2000)}\n</user_profile>`, memory });
+  const fitted = fitPromptToBudget({ ...emptyPrompt, instructions: textOfTokens(600), profile: `<user_profile>\nname: Asha\n${filler(2000)}\n</user_profile>`, memory });
   expect(estimateTokens(fitted.memory)).toBeLessThanOrEqual(TOKEN_BUDGET.memory);
   expect(fitted.memory.startsWith('<memory>\nitem 0')).toBe(true);
   expect(fitted.memory.endsWith('…\n</memory>')).toBe(true);
@@ -66,17 +71,17 @@ test('memory and profile blocks are cut to their budgets and keep their closing 
 });
 
 test('still over budget: the lowest-ranked search results go first, then the older turns', () => {
-  const searchResults = Array.from({ length: 8 }, (_, i) => longResult(1, i + 1)).map((r) => ({ ...r, content: filler(1400) }));
-  const history: Turn[] = [1, 2, 3].map((n) => ({ role: 'user', content: `turn ${n} ${filler(1100)}` }));
-  const userText = filler(4000);
+  const searchResults = Array.from({ length: 8 }, (_, i) => longResult(1, i + 1)).map((r) => ({ ...r, content: textOfTokens(320) }));
+  const history: Turn[] = [1, 2, 3].map((n) => ({ role: 'user', content: `turn ${n} ${textOfTokens(270)}` }));
+  const userText = textOfTokens(1000);
 
-  const overByALittle = fitPromptToBudget({ ...emptyPrompt, instructions: filler(8000), userText, history, searchResults });
+  const overByALittle = fitPromptToBudget({ ...emptyPrompt, instructions: textOfTokens(2000), userText, history, searchResults });
   expect(estimatePromptTokens(overByALittle)).toBeLessThanOrEqual(TOKEN_BUDGET.total);
   expect(overByALittle.searchResults.length).toBeLessThan(8);
   expect(overByALittle.searchResults.map((r) => r.title)[0]).toBe('Result 1 for query 1');
   expect(overByALittle.history).toHaveLength(3);
 
-  const overByALot = fitPromptToBudget({ ...emptyPrompt, instructions: filler(18_000), userText, history, searchResults });
+  const overByALot = fitPromptToBudget({ ...emptyPrompt, instructions: textOfTokens(4300), userText, history, searchResults });
   expect(overByALot.searchResults).toEqual([]);
   expect(overByALot.history.map((turn) => turn.content.slice(0, 6))).toEqual(['turn 3']);
 });
@@ -118,4 +123,18 @@ test('a rate limit or too-large error becomes a short friendly message; other er
   const providerErrorThatIsNotAnErrorObject = { message: 'Tool choice is none, but model called a tool', type: 'invalid_request_error' };
   expect(userFacingError(providerErrorThatIsNotAnErrorObject)).toBe('Tool choice is none, but model called a tool');
   expect(userFacingError('plain text failure')).toBe('plain text failure');
+});
+
+test('tokens are counted with the o200k encoding, not guessed from the length', () => {
+  expect(estimateTokens('')).toBe(0);
+  expect(estimateTokens('hello world')).toBe(2);
+  const url = 'https://neon.com/pricing?plan=launch&billing=monthly';
+  expect(estimateTokens(url)).toBeGreaterThan(Math.ceil(url.length / 8));
+  expect(estimateTokens(textOfTokens(500))).toBeLessThanOrEqual(500);
+  expect(estimateTokens(textOfTokens(500))).toBeGreaterThan(480);
+});
+
+test('a prompt estimate includes what Groq adds to every request: the chat template and the tool definition', () => {
+  expect(estimatePromptTokens(emptyPrompt)).toBe(CHAT_TEMPLATE_TOKENS_PER_REQUEST + SEARCH_TOOL_DEFINITION_TOKENS);
+  expect(estimatePromptTokens({ ...emptyPrompt, userText: 'hello world' })).toBe(74 + 116 + 2);
 });

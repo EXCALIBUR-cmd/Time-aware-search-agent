@@ -8,10 +8,13 @@ import { getMessages, listUserFacts, saveClaims, saveMessage, saveUserFacts } fr
 import { createSearchSession, formatSearchResults, type NumberedResult } from '../search/web-search-tool';
 import { refersToPast, resolveTime, type TimeRange } from '../time/resolve';
 import {
+  CHAT_TEMPLATE_TOKENS_PER_REQUEST,
   errorMessage,
   estimatePromptTokens,
   fitPromptToBudget,
+  logActualUsage,
   logPromptSize,
+  SEARCH_TOOL_DEFINITION_TOKENS,
   TOKEN_BUDGET,
   userFacingError,
 } from './budget';
@@ -127,8 +130,13 @@ export function runAgent({
         system: string;
         tools: ToolSet;
         providerOptions?: typeof FAST_MODEL_PROVIDER_OPTIONS;
-      }) =>
-        streamText({
+      }) => {
+        const offersTheSearchTool = Object.keys(answer.tools).length > 0;
+        const fixedOverhead = CHAT_TEMPLATE_TOKENS_PER_REQUEST + (offersTheSearchTool ? SEARCH_TOOL_DEFINITION_TOKENS : 0);
+        const estimatedBySteps: number[] = [];
+        let stepsCounted = 0;
+        const callName = (step: number) => `${answer.modelId} answer, step ${step}`;
+        return streamText({
           model: groq(answer.modelId),
           providerOptions: answer.providerOptions,
           system: answer.system,
@@ -139,10 +147,14 @@ export function runAgent({
           prepareStep: ({ stepNumber, messages }) => {
             const outOfSearches = stepNumber >= FOLLOW_UP_SEARCHES;
             const stepSystem = outOfSearches ? joinSections([answer.system, ANSWER_WITHOUT_SEARCHING_AGAIN]) : answer.system;
-            logPromptSize(`${answer.modelId} answer, step ${stepNumber + 1}`, stepSystem, messages);
+            estimatedBySteps[stepNumber] = logPromptSize(callName(stepNumber + 1), [stepSystem, messages], fixedOverhead);
             return outOfSearches ? { toolChoice: 'none' as const, system: stepSystem } : {};
           },
           onError: ({ error }) => console.error('[agent] model call failed:', errorMessage(error)),
+          onStepFinish: (step) => {
+            logActualUsage(callName(stepsCounted + 1), estimatedBySteps[stepsCounted] ?? 0, step.usage.inputTokens);
+            stepsCounted++;
+          },
           onFinish: ({ steps }) => {
             if (mentionsSelf(text)) {
               void extractUserFacts(text)
@@ -159,6 +171,7 @@ export function runAgent({
             }
           },
         });
+      };
 
       const answerFromMainModel = () =>
         answerWith({

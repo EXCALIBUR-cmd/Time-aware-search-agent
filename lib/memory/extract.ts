@@ -1,7 +1,7 @@
 import { groq } from '@ai-sdk/groq';
 import { generateText } from 'ai';
 import { z } from 'zod';
-import { logPromptSize } from '../agent/budget';
+import { logActualUsage, logPromptSize } from '../agent/budget';
 import { FAST_MODEL_PROVIDER_OPTIONS, getConfig } from '../config';
 import type { NumberedResult } from '../search/web-search-tool';
 import type { Claim } from './store';
@@ -35,14 +35,15 @@ export const mentionsSelf = (text: string) => /\b(i|i'm|im|my|me|mine|myself)\b/
 
 export async function extractUserFacts(userText: string): Promise<{ key: string; value: string }[]> {
   const prompt = userText.slice(0, 2000);
-  logPromptSize('user fact extraction', FACTS_SYSTEM, prompt);
-  const { text } = await generateText({
+  const estimated = logPromptSize('user fact extraction', [FACTS_SYSTEM, prompt]);
+  const { text, usage } = await generateText({
     model: groq(getConfig().FAST_MODEL),
     providerOptions: FAST_MODEL_PROVIDER_OPTIONS,
     temperature: 0,
     system: FACTS_SYSTEM,
     prompt,
   });
+  logActualUsage('user fact extraction', estimated, usage.inputTokens);
   const { facts } = Facts.parse(JSON.parse(text.match(/\{[\s\S]*\}/)?.[0] ?? ''));
   return facts
     .map((f) => ({ key: f.key.trim().toLowerCase().replace(/\s+/g, '_'), value: f.value.trim() }))
@@ -52,14 +53,15 @@ export async function extractUserFacts(userText: string): Promise<{ key: string;
 
 export async function extractClaims(answer: string, sources: NumberedResult[]): Promise<Claim[]> {
   const prompt = `Answer:\n${answer.slice(0, 4000)}\n\nSources:\n${sources.map((s) => `[${s.n}] ${s.title} ${s.url}`).join('\n')}`;
-  logPromptSize('claim extraction', SYSTEM, prompt);
-  const { text } = await generateText({
+  const estimated = logPromptSize('claim extraction', [SYSTEM, prompt]);
+  const { text, usage } = await generateText({
     model: groq(getConfig().FAST_MODEL),
     providerOptions: FAST_MODEL_PROVIDER_OPTIONS,
     temperature: 0,
     system: SYSTEM,
     prompt,
   });
+  logActualUsage('claim extraction', estimated, usage.inputTokens);
   const { claims } = Output.parse(JSON.parse(text.match(/\{[\s\S]*\}/)?.[0] ?? ''));
   return claims.slice(0, MAX_CLAIMS).map((c) => ({
     subject: c.subject,

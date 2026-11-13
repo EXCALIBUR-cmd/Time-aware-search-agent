@@ -2,7 +2,7 @@ import { groq } from '@ai-sdk/groq';
 import { generateText } from 'ai';
 import { z } from 'zod';
 import { FAST_MODEL_PROVIDER_OPTIONS, getConfig } from '../config';
-import { logPromptSize } from './budget';
+import { logActualUsage, logPromptSize } from './budget';
 
 export type Mode = 'chat' | 'fresh' | 'recall' | 'reverify';
 export type RoutingPlan = { mode: Mode; queries: string[] };
@@ -55,8 +55,8 @@ const describeTurn = (text: string, context: RoutingContext) =>
 
 async function askModelForPlan(text: string, context: RoutingContext): Promise<RoutingPlan> {
   const prompt = describeTurn(text, context);
-  logPromptSize('router', SYSTEM, prompt);
-  const { text: out } = await generateText({
+  const estimated = logPromptSize('router', [SYSTEM, prompt]);
+  const { text: out, usage } = await generateText({
     model: groq(getConfig().FAST_MODEL),
     providerOptions: FAST_MODEL_PROVIDER_OPTIONS,
     system: SYSTEM,
@@ -65,6 +65,7 @@ async function askModelForPlan(text: string, context: RoutingContext): Promise<R
     maxRetries: 0,
     abortSignal: AbortSignal.timeout(ROUTER_TIMEOUT_MS),
   });
+  logActualUsage('router', estimated, usage.inputTokens);
   return parsePlan(out);
 }
 

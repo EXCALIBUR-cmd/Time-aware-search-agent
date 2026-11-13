@@ -1,3 +1,5 @@
+import { countTokens } from 'gpt-tokenizer/encoding/o200k_base';
+
 export const TOKEN_BUDGET = {
   total: 6000,
   instructionsAndProfile: 800,
@@ -7,7 +9,10 @@ export const TOKEN_BUDGET = {
 } as const;
 
 export const CHARS_PER_TOKEN = 4;
+export const CHAT_TEMPLATE_TOKENS_PER_REQUEST = 74;
+export const SEARCH_TOOL_DEFINITION_TOKENS = 116;
 const TRUNCATION_MARK = '…';
+const SHRINK_STEP = 0.9;
 const RATE_LIMITED_OR_TOO_LARGE = /rate limit|too large|tokens per minute|\b(429|413)\b/i;
 const RATE_LIMITED = /rate limit|\b429\b/i;
 const TOO_LARGE = /too large|\b413\b/i;
@@ -24,13 +29,15 @@ export type PromptParts<Result> = {
   searchResults: Result[];
 };
 
-export const estimateTokens = (text: string): number => Math.ceil(text.length / CHARS_PER_TOKEN);
+export const estimateTokens = (text: string): number => countTokens(text);
 
 const tokensOf = (part: unknown): number => estimateTokens(typeof part === 'string' ? part : JSON.stringify(part));
 
 const sumTokens = (parts: unknown[]): number => parts.reduce<number>((sum, part) => sum + tokensOf(part), 0);
 
 export const estimatePromptTokens = <Result>(p: PromptParts<Result>): number =>
+  CHAT_TEMPLATE_TOKENS_PER_REQUEST +
+  SEARCH_TOOL_DEFINITION_TOKENS +
   sumTokens([p.instructions, p.profile, p.memory, p.userText, ...p.history.map((turn) => turn.content), ...p.searchResults]);
 
 export function takeWithinTokens<Item>(bestFirst: Item[], maxTokens: number): Item[] {
@@ -43,6 +50,12 @@ export function takeWithinTokens<Item>(bestFirst: Item[], maxTokens: number): It
     used += size;
   }
   return kept;
+}
+
+function truncateToTokens(text: string, maxTokens: number): string {
+  let chars = Math.max(0, maxTokens) * CHARS_PER_TOKEN;
+  while (chars > 0 && estimateTokens(text.slice(0, chars)) > maxTokens) chars = Math.floor(chars * SHRINK_STEP);
+  return text.slice(0, chars);
 }
 
 function fitTaggedBlock(block: string, maxTokens: number): string {
@@ -62,8 +75,8 @@ function newestTurnsWithin(history: Turn[], maxTokens: number): Turn[] {
   const newest = newestFirst[0];
   const newestAloneIsTooLong = newest !== undefined && kept.length === 0;
   if (newestAloneIsTooLong) {
-    const roomForContent = (maxTokens - tokensOf({ ...newest, content: '' })) * CHARS_PER_TOKEN;
-    return [{ ...newest, content: newest.content.slice(0, Math.max(0, roomForContent)) }];
+    const roomForContent = maxTokens - tokensOf({ ...newest, content: '' });
+    return [{ ...newest, content: truncateToTokens(newest.content, roomForContent) }];
   }
   return kept.reverse();
 }
@@ -82,8 +95,20 @@ export function fitPromptToBudget<Result>(parts: PromptParts<Result>): PromptPar
   return fitted;
 }
 
-export function logPromptSize(modelCall: string, ...promptParts: unknown[]): void {
-  console.info(`[prompt] ${modelCall}: ~${sumTokens(promptParts)} tokens`);
+export function logPromptSize(
+  modelCall: string,
+  promptParts: unknown[],
+  fixedOverhead: number = CHAT_TEMPLATE_TOKENS_PER_REQUEST,
+): number {
+  const estimated = fixedOverhead + sumTokens(promptParts);
+  console.info(`[prompt] ${modelCall}: ~${estimated} tokens`);
+  return estimated;
+}
+
+export function logActualUsage(modelCall: string, estimated: number, countedByGroq: number | undefined): void {
+  if (countedByGroq === undefined) return;
+  const difference = Math.round(((countedByGroq - estimated) / countedByGroq) * 100);
+  console.info(`[usage] ${modelCall}: estimated ${estimated}, Groq counted ${countedByGroq} (${difference}% off)`);
 }
 
 export function errorMessage(error: unknown): string {
