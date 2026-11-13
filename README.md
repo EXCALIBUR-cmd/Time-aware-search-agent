@@ -4,7 +4,7 @@ A chat agent with one tool, web search, that remembers what it said and when, an
 
 ## Setup
 
-Needs Node.js 20 or newer.
+Needs Node.js 22 or newer. No compiler or build tools are needed: the SQLite driver ships prebuilt.
 
 1. `npm install`
 2. Copy `.env.example` to `.env` and fill in `GROQ_API_KEY` and `TAVILY_API_KEY`.
