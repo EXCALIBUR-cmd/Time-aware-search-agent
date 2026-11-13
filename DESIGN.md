@@ -2,48 +2,53 @@
 
 ## How it works
 
-Every turn runs the same pipeline. Only three steps call a model: the router, the answer and extraction.
+One pipeline per turn. Three steps call a model: router, answer, extraction.
 
 ```
-user message
-  → resolve dates in code      "last Tuesday" → 3 Nov 00:00 to 23:59 IST   (chrono-node)
-  → recall from SQLite         user profile, every message in the date range, FTS5 topic matches, with their claims
-  → route and plan (small)     chat | fresh | recall | reverify, plus 1 to 4 search queries; a past date forces memory
-  → search in code             the planned queries in parallel, 8 results at most, prompt kept under ~6,000 tokens
-  → answer (main model)        one call with the results; one follow-up search; the small model answers on a 429
-  → stream the answer          status lines first, then tokens, then source chips
-  → after the stream closes    save the answer, extract claims and user facts (small model), index them
+resolve dates in code    "last Tuesday" → 3 Nov, full day, IST
+recall from SQLite       profile, dated messages, FTS5 topic matches, claims
+route and plan (small)   chat/fresh/recall/reverify, 1 to 4 queries
+search in code           in parallel, at most 8 results
+answer (main model)      one call; one follow-up search
+stream                   status, tokens, source chips
+afterwards               save, extract claims and facts, index
 ```
 
-Chat and recall turns skip search. The memory lookup is local SQLite, so it runs on every turn. Nothing after the last token makes the user wait. The server's stored history is the source of truth: the client sends only the new message.
+- Chat and recall skip search; recall runs every turn.
+- Nothing after the last token makes the user wait.
+- Server history is the source of truth; the client sends only the new message.
 
 ## Why this way
 
-Every question in the brief is about time: what was said on a date, and whether it is still true. So memory is the product and search is table stakes.
+Every question in the brief is about time, so memory is the product; search is table stakes.
 
-- **Memory is timestamped and stores claims.** An answer is kept as text and as rows of subject, attribute, value, source and date checked. Re-verification compares those rows with fresh evidence in a was / now / changed table. A re-check adds rows and keeps the old ones.
-- **Date maths runs in code.** The model never works out what "Monday" means. It gets a `<memory>` block where every item carries its date, or an explicit "No conversations found between 1 Oct and 1 Oct", the line that stops invented memories. A date without a year means its most recent occurrence.
-- **A user profile.** Facts the user states about themselves (name, role, location, preferences) are stored append-only and injected every turn, the newest value winning.
-- **Recall respects the clock.** Messages, claims and user facts are readable only when dated at or before the agent's "now", and date ranges are clamped to it: at 3 Nov, an 8 Nov chat does not exist yet. Nothing is deleted; only recall is filtered. Web search and its cache always use the real clock.
-- **One tool.** Memory needs are predictable from the message, so memory is a pipeline step, not a tool. The router plans the searches, so the main model usually answers in one call. The open chat is not recalled: it is already the model's history.
-- **Speed comes from skipping work**: a small-model router (about half a second), no search for small talk or recall, parallel queries, a search cache (6 hours; 30 minutes for prices and news; bypassed when re-verifying).
+- **Dated memory with claims.** Answers are kept as text and as claim rows (subject, attribute, value, source, date checked). Re-verification compares them with fresh results (was / now / changed) and adds rows, never overwrites.
+- **Date maths in code.** Every `<memory>` item carries its date; an empty range is stated, which stops invented memories. A date without a year is its most recent occurrence.
+- **Rules outrank the router.** A past date or "do you remember" forces memory mode.
+- **User profile.** Stated facts (name, role, location, preferences) are append-only, injected every turn; newest wins.
+- **Recall respects the clock.** Only rows dated up to the agent's "now" are readable, ranges are clamped to it, nothing is deleted. Web search and its cache use the real clock.
+- **One tool, planned searches.** Memory is a pipeline step. The router plans queries, so the main model usually answers in one call: 9,481 → 5,148 prompt tokens over three questions (46% fewer), first token 7.3 s → 2.3 s. The open chat is not recalled: it is the history.
+- **Token budget.** About 6,000 tokens (instructions and profile 800, memory 1,200, search 3,000, history 1,000); lowest-ranked results drop first, then older turns. Counted with o200k plus 74 per request and 116 for the tool: exact against Groq on first steps (506 vs 506), 5 to 7% high after a follow-up search.
+- **Rate limits.** On a 429, retry only if Groq asks for 5 s or less; otherwise the small model answers with a note. The answering model is stored, so the note survives a reload.
+- **Search cache.** 6 h; 30 min for prices and news; bypassed when re-verifying.
 
 ## Considered and rejected
 
-- **Vector database.** I built one in Nova Chat. Embeddings do not understand "3 November"; a date range and a keyword index do.
-- **LangChain.** It hides the decisions this exercise is about.
+- **Vector database.** Built one in Nova Chat; embeddings do not understand "3 November".
+- **LangChain.** Hides the decisions this exercise is about.
 - **Multi-agent planner.** Too slow for a chat turn.
-- **LLM date maths.** Unreliable, and trivially correct in code.
-- **A memory tool for the model.** It adds a round trip for something the message already tells us.
+- **LLM date maths.** Unreliable; trivially correct in code.
+- **A memory tool.** A round trip for what the message already says.
 
 ## Trade-offs
 
-- FTS5 is keyword search: it misses synonyms.
-- The router can misclassify. A past date overrides it, and a failure or a 1.5 s timeout falls back to a fresh search.
-- "Last Tuesday" is read as the most recent Tuesday. "Monday" said on a Monday recalls both today and a week ago.
-- A date range is cut at 50 messages, topic matches at 8 and search at 3 results per query, to stay inside free-tier limits.
-- A user fact is stored only when its value appears word for word in the message, so a paraphrase can be missed. Claim extraction sees source titles and URLs, not page text.
+- FTS5 misses synonyms.
+- The router can misclassify; failure or its 1.5 s timeout falls back to a fresh search. Over 10 turns: median 0.5 s, 90th percentile 1.2 s.
+- "Last Tuesday" is the most recent Tuesday; "Monday" on a Monday recalls today and a week ago.
+- Free-tier caps: 50 messages per range, 8 topic matches, 3 results per query.
+- A user fact needs its value word for word; claim extraction sees titles and URLs, not page text.
+- A follow-up search costs more: about 6,500 tokens in one run.
 
 ## With another week
 
-Hybrid FTS and embeddings; fetching pricing pages directly; per-user memory and auth; Turso for deployment; scheduled background re-checks that notify on changes; a larger eval set with graded answers.
+Hybrid FTS and embeddings; fetching pricing pages; per-user auth; Turso; scheduled re-checks with notifications; a larger graded eval set.
