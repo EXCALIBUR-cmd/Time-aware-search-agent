@@ -2,11 +2,14 @@ import { z } from 'zod';
 
 const nonBlankEnv = (name: string) => process.env[name]?.trim() || undefined;
 
+const DEFAULT_MAIN_MODEL = 'openai/gpt-oss-120b';
+const DEFAULT_FAST_MODEL = 'openai/gpt-oss-20b';
+
 const schema = z.object({
   GROQ_API_KEY: z.string(),
   TAVILY_API_KEY: z.string(),
-  MAIN_MODEL: z.string().default('openai/gpt-oss-120b'),
-  FAST_MODEL: z.string().default('openai/gpt-oss-20b'),
+  MAIN_MODEL: z.string().default(DEFAULT_MAIN_MODEL),
+  FAST_MODEL: z.string().default(DEFAULT_FAST_MODEL),
 });
 
 export const FAST_MODEL_PROVIDER_OPTIONS = { groq: { reasoningEffort: 'low', reasoningFormat: 'hidden' } };
@@ -31,6 +34,8 @@ export function now(): Date {
   if (Number.isNaN(d.getTime())) throw new Error(`AGENT_NOW is not a valid ISO date: ${fixed}`);
   return d;
 }
+
+export const mainModel = () => nonBlankEnv('MAIN_MODEL') ?? DEFAULT_MAIN_MODEL;
 
 export const tz = () => nonBlankEnv('AGENT_TZ') ?? 'Asia/Kolkata';
 

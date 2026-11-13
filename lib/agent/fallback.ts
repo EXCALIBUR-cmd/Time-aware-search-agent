@@ -4,6 +4,9 @@ import { errorMessage, isRateLimited, userFacingError } from './budget';
 export const SMALLER_MODEL_NOTICE = 'Answered with a smaller model due to rate limits.';
 export const LONGEST_WAIT_WORTH_RETRYING_MS = 5000;
 
+export const noticeForAnswerBy = (answeredByModel: string | null, mainModel: string): string | null =>
+  answeredByModel !== null && answeredByModel !== mainModel ? SMALLER_MODEL_NOTICE : null;
+
 const SEARCHED_WHEN_NOT_ALLOWED = /tool choice is none|called a tool|not in request\.tools|tool_use_failed|failed to call a function/i;
 const WAIT_STATED_IN_MESSAGE = /try again in (?:(\d+)m(?!s))?(?:([\d.]+)(ms|s))?/i;
 

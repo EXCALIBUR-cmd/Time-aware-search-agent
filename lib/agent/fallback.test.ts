@@ -1,7 +1,15 @@
 import type { UIMessageChunk } from 'ai';
 import { expect, test } from 'vitest';
 import { BUSY_MESSAGE, isRateLimited } from './budget';
-import { forwardAnswer, handOverReasonFor, retryAfterMs, worthWaitingFor, type AnswerStream } from './fallback';
+import {
+  forwardAnswer,
+  handOverReasonFor,
+  noticeForAnswerBy,
+  retryAfterMs,
+  SMALLER_MODEL_NOTICE,
+  worthWaitingFor,
+  type AnswerStream,
+} from './fallback';
 
 const RATE_LIMIT_AFTER_RETRY = new Error(
   'Failed after 2 attempts. Last error: Rate limit reached for model `openai/gpt-oss-120b` on tokens per minute (TPM): Limit 8000, Used 4467, Requested 4159. Please try again in 4.695s.',
@@ -109,4 +117,10 @@ test('only a wait of 5 s or less is worth a retry; a longer or unknown wait hand
   expect(worthWaitingFor({ reason: 'rate-limited' })).toBe(false);
   expect(worthWaitingFor({ reason: 'searched-when-not-allowed', retryAfterMs: 100 })).toBe(false);
   expect(worthWaitingFor({})).toBe(false);
+});
+
+test('the smaller-model note comes from the stored model, so it is the same after a reload', () => {
+  expect(noticeForAnswerBy('small/model', 'main/model')).toBe(SMALLER_MODEL_NOTICE);
+  expect(noticeForAnswerBy('main/model', 'main/model')).toBeNull();
+  expect(noticeForAnswerBy(null, 'main/model')).toBeNull();
 });

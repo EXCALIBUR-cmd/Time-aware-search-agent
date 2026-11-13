@@ -3,7 +3,7 @@ import { getDb } from './db';
 
 export type Role = 'user' | 'assistant';
 export type Claim = { subject: string; attribute: string; value: string; sourceUrl?: string | null };
-export type StoredMessage = { id: string; role: Role; content: string; created_at: string };
+export type StoredMessage = { id: string; role: Role; content: string; created_at: string; model: string | null };
 export type Conversation = { id: string; title: string; created_at: string; is_demo: 0 | 1 };
 
 const index = (text: string, kind: 'message' | 'claim', recalledMessageId: string, at: string) =>
@@ -18,6 +18,7 @@ export function saveMessage(m: {
   content: string;
   at: Date;
   demo?: boolean;
+  answeredByModel?: string;
 }): string {
   const db = getDb();
   const id = m.id ?? randomUUID();
@@ -29,12 +30,13 @@ export function saveMessage(m: {
       at,
       m.demo ? 1 : 0,
     );
-    db.prepare('INSERT INTO messages (id, conversation_id, role, content, created_at) VALUES (?, ?, ?, ?, ?)').run(
+    db.prepare('INSERT INTO messages (id, conversation_id, role, content, created_at, model) VALUES (?, ?, ?, ?, ?, ?)').run(
       id,
       m.conversationId,
       m.role,
       m.content,
       at,
+      m.answeredByModel ?? null,
     );
     index(m.content, 'message', id, at);
   })();
@@ -62,7 +64,7 @@ export const listConversations = () =>
 
 export const getMessages = (conversationId: string) =>
   getDb()
-    .prepare('SELECT id, role, content, created_at FROM messages WHERE conversation_id = ? ORDER BY rowid')
+    .prepare('SELECT id, role, content, created_at, model FROM messages WHERE conversation_id = ? ORDER BY rowid')
     .all(conversationId) as StoredMessage[];
 
 export type UserFact = { key: string; value: string; source_message_id: string | null; updated_at: string };

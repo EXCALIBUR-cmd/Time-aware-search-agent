@@ -163,7 +163,13 @@ export function runAgent({
             }
             const answerText = steps.map((s) => s.text).join('').trim();
             if (!answerText) return;
-            const id = saveMessage({ conversationId, role: 'assistant', content: answerText, at: clock() });
+            const id = saveMessage({
+              conversationId,
+              role: 'assistant',
+              content: answerText,
+              at: clock(),
+              answeredByModel: answer.modelId,
+            });
             if (sources.length) {
               void extractClaims(answerText, sources)
                 .then((claims) => saveClaims(id, claims, clock()))

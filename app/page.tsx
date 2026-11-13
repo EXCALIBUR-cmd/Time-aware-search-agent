@@ -7,7 +7,12 @@ import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
 type Conversation = { id: string; title: string; created_at: string; is_demo: 0 | 1 };
-type Stored = { id: string; role: 'user' | 'assistant'; content: string };
+type Stored = { id: string; role: 'user' | 'assistant'; content: string; notice: string | null };
+
+const partsOf = (stored: Stored): UIMessage['parts'] => [
+  { type: 'text', text: stored.content },
+  ...(stored.notice ? [{ type: 'data-notice' as const, data: stored.notice }] : []),
+];
 
 const transport = new DefaultChatTransport({ api: '/api/chat' });
 const DEV = process.env.NODE_ENV === 'development';
@@ -115,7 +120,7 @@ export default function Page() {
     fetch(`/api/conversations?id=${encodeURIComponent(chatId)}`)
       .then((r) => r.json())
       .then((rows: Stored[]) => {
-        if (rows.length) setMessages(rows.map((m) => ({ id: m.id, role: m.role, parts: [{ type: 'text', text: m.content }] })));
+        if (rows.length) setMessages(rows.map((m) => ({ id: m.id, role: m.role, parts: partsOf(m) })));
       })
       .catch(() => {});
   }, [chatId]);

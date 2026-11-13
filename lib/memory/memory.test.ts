@@ -30,6 +30,13 @@ test('message and conversation timestamps are the clock they were given, simulat
   expect(getMessages('sim').map((m) => m.created_at)).toEqual([simulated.toISOString()]);
 });
 
+test('an answer remembers which model wrote it; a user message has none', () => {
+  saveMessage({ conversationId: 'm', role: 'user', content: 'question', at: now });
+  saveMessage({ conversationId: 'm', role: 'assistant', content: 'answer', at: now, answeredByModel: 'some/small-model' });
+  expect(getMessages('m').map((m) => m.model)).toEqual([null, 'some/small-model']);
+  expect(getMessages('pg').map((m) => m.model)).toEqual([null, null]);
+});
+
 test('a conversation keeps its order when the clock moves backwards', () => {
   saveMessage({ conversationId: 'mixed', role: 'user', content: 'first, said today', at: now });
   saveMessage({ conversationId: 'mixed', role: 'user', content: 'second, said on a simulated 1 Nov', at: new Date('2026-11-01T11:23:00+05:30') });

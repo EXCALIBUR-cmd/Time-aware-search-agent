@@ -7,7 +7,7 @@ import { resolveTime } from '../time/resolve';
 import { openDb } from './db';
 import { formatMemory } from './format';
 import { recall } from './recall';
-import { listConversations, listUserFacts, saveClaims, saveMessage, saveUserFacts } from './store';
+import { getMessages, listConversations, listUserFacts, saveClaims, saveMessage, saveUserFacts } from './store';
 
 const tz = 'Asia/Kolkata';
 const at = (day: number, time = '10:00') => new Date(`2026-11-${String(day).padStart(2, '0')}T${time}:00+05:30`);
@@ -79,6 +79,26 @@ test('migration keeps facts from the old one-row-per-key table and then allows h
   db.prepare('INSERT INTO user_facts (key, value, updated_at) VALUES (?, ?, ?)').run('name', 'Rahul', at(8).toISOString());
   expect(listUserFacts(at(3)).map((f) => f.value)).toEqual(['Maninder']);
   expect(listUserFacts(at(12)).map((f) => f.value)).toEqual(['Rahul']);
+  db.close();
+  for (const suffix of ['', '-wal', '-shm']) rmSync(file + suffix, { force: true });
+});
+
+test('migration adds the model column to a messages table created before it existed', () => {
+  const file = join(tmpdir(), `agent-model-migration-${process.pid}.db`);
+  rmSync(file, { force: true });
+  const old = new Database(file);
+  old.exec(`CREATE TABLE conversations (id TEXT PRIMARY KEY, title TEXT, created_at TEXT NOT NULL);
+            CREATE TABLE messages (id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL REFERENCES conversations(id),
+              role TEXT NOT NULL CHECK (role IN ('user','assistant')), content TEXT NOT NULL, created_at TEXT NOT NULL);
+            INSERT INTO conversations VALUES ('old', 'an old chat', '${at(1).toISOString()}');
+            INSERT INTO messages VALUES ('old-1', 'old', 'assistant', 'an old answer', '${at(1).toISOString()}');`);
+  old.close();
+  const db = openDb(file);
+  saveMessage({ conversationId: 'old', role: 'assistant', content: 'a new answer', at: at(3), answeredByModel: 'small/model' });
+  expect(getMessages('old').map((m) => [m.content, m.model])).toEqual([
+    ['an old answer', null],
+    ['a new answer', 'small/model'],
+  ]);
   db.close();
   for (const suffix of ['', '-wal', '-shm']) rmSync(file + suffix, { force: true });
 });

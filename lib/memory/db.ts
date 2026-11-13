@@ -23,7 +23,8 @@ CREATE TABLE IF NOT EXISTS messages (
   conversation_id TEXT NOT NULL REFERENCES conversations(id),
   role TEXT NOT NULL CHECK (role IN ('user','assistant')),
   content TEXT NOT NULL,
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  model TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_messages_time ON messages(created_at);
 CREATE TABLE IF NOT EXISTS claims (
@@ -54,6 +55,12 @@ function addDemoFlagToOlderDatabases(opened: Database.Database): void {
   opened.exec('ALTER TABLE conversations ADD COLUMN is_demo INTEGER NOT NULL DEFAULT 0');
 }
 
+function addAnsweringModelToOlderDatabases(opened: Database.Database): void {
+  const columns = opened.pragma('table_info(messages)') as { name: string }[];
+  if (columns.some((c) => c.name === 'model')) return;
+  opened.exec('ALTER TABLE messages ADD COLUMN model TEXT');
+}
+
 function keepUserFactHistoryInOlderDatabases(opened: Database.Database): void {
   const columns = opened.pragma('table_info(user_facts)') as { name: string; pk: number }[];
   const holdsOnlyOneRowPerKey = columns.some((c) => c.name === 'key' && c.pk > 0);
@@ -75,6 +82,7 @@ export function openDb(file = dbPath()): Database.Database {
   opened.pragma('foreign_keys = ON');
   opened.exec(IDEMPOTENT_SCHEMA);
   addDemoFlagToOlderDatabases(opened);
+  addAnsweringModelToOlderDatabases(opened);
   keepUserFactHistoryInOlderDatabases(opened);
   return opened;
 }
