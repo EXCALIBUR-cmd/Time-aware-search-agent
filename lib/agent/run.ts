@@ -1,5 +1,7 @@
 import { groq } from '@ai-sdk/groq';
+import { formatInTimeZone } from 'date-fns-tz';
 import { createUIMessageStream, stepCountIs, streamText, type ToolSet } from 'ai';
+import { citedNumbers } from '../citations';
 import { FAST_MODEL_PROVIDER_OPTIONS, getConfig, now, tz } from '../config';
 import { extractClaims, extractUserFacts, mentionsSelf } from '../memory/extract';
 import { formatMemory, formatProfile } from '../memory/format';
@@ -44,6 +46,13 @@ const logRawErrorAndDescribeForUser = (e: unknown) => {
 const joinSections = (sections: string[]) => sections.filter(Boolean).join('\n\n');
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const claimsIn = (items: MemoryItem[]) => items.flatMap((item) => item.claims);
+
+function sinceWhen(ranges: TimeRange[], items: MemoryItem[], zone: string): string | undefined {
+  const earliestAskedDay = ranges.map((r) => r.start).sort((a, b) => a.getTime() - b.getTime())[0];
+  const oldestClaimCheck = claimsIn(items).map((c) => c.checked_at).sort()[0];
+  const since = earliestAskedDay ?? oldestClaimCheck;
+  return since ? formatInTimeZone(since, zone, 'EEE d MMM') : undefined;
+}
 const subjectsIn = (items: MemoryItem[]) => [...new Set(claimsIn(items).map((claim) => claim.subject))];
 
 export function runAgent({
@@ -99,7 +108,13 @@ export function runAgent({
       const searchedAlready = vendorChecks.length > 0 || plannedQueries.length > 0;
 
       const prompt = fitPromptToBudget({
-        instructions: buildInstructions({ mode, now: at, tz: zone, searchedAlready }),
+        instructions: buildInstructions({
+          mode,
+          now: at,
+          tz: zone,
+          searchedAlready,
+          verdictSince: reverify ? sinceWhen(rangesWhenAboutPast, items, zone) : undefined,
+        }),
         profile: formatProfile(listUserFacts(at), zone),
         memory,
         history,
@@ -175,8 +190,10 @@ export function runAgent({
               at: clock(),
               answeredByModel: answer.modelId,
             });
-            if (sources.length) {
-              void extractClaims(answerText, sources)
+            const cited = citedNumbers(answerText);
+            const citedSources = sources.filter((source) => cited.has(String(source.n)));
+            if (citedSources.length) {
+              void extractClaims(answerText, citedSources)
                 .then((claims) => saveClaims(id, claims, clock()))
                 .catch(logFailure('claim extraction'));
             }

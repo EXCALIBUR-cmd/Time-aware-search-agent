@@ -5,6 +5,7 @@ import { DefaultChatTransport, type UIMessage } from 'ai';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { citedSources } from '@/lib/citations';
 
 type Conversation = { id: string; title: string; created_at: string; is_demo: 0 | 1 };
 type Stored = { id: string; role: 'user' | 'assistant'; content: string; notice: string | null };
@@ -45,7 +46,10 @@ const host = (url: string) => {
 
 function Message({ message }: { message: UIMessage }) {
   const text = message.parts.map((p) => (p.type === 'text' ? p.text : '')).join('');
-  const sources = message.parts.filter((p) => p.type === 'source-url');
+  const sources = citedSources(
+    text,
+    message.parts.filter((p) => p.type === 'source-url'),
+  );
   const notice = message.parts.flatMap((p) => (p.type === 'data-notice' ? [String(p.data)] : []))[0];
   if (message.role === 'user') {
     return <div className="ml-auto w-fit max-w-[85%] whitespace-pre-wrap rounded-2xl bg-zinc-100 px-4 py-2">{text}</div>;
