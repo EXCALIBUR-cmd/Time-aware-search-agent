@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 import type { MemoryClaim } from '../memory/recall';
 import type { NumberedResult } from '../search/web-search-tool';
-import { checkRows, claimsToCompare, quoteAppearsIn, renderTable, renderVerdict, type CheckedRow, type ClaimRow } from './reverify';
+import { atMostTwoSentences, checkRows, claimsToCompare, quoteAppearsIn, renderTable, renderVerdict, type CheckedRow, type ClaimRow } from './reverify';
 import { compareValues, containsValue } from './values';
 
 const tz = 'Asia/Kolkata';
@@ -144,4 +144,10 @@ test('a table quote may leave out cells, but every cell it keeps must be in one 
   expect(quoteAppearsIn(supabase, '8 GB disk per project included | Database Size')).toBe(false);
   expect(quoteAppearsIn(supabase, 'Database Size | 9 GB disk per project included')).toBe(false);
   expect(quoteAppearsIn('Plan | Price\nHobby | $5 / month', 'Plan | Price … Hobby | $5 / month')).toBe(false);
+});
+
+test('the context keeps at most two sentences, without breaking a price at its decimal point', () => {
+  const answer = 'Neon now bills $0.14 per CU-hour, up from $0.106. The change took effect in November. Railway is unchanged.\n| a | b |\n# Heading';
+  expect(atMostTwoSentences(answer)).toBe('Neon now bills $0.14 per CU-hour, up from $0.106. The change took effect in November.');
+  expect(atMostTwoSentences('Storage rose to 5 GB on the Hobby plan.')).toBe('Storage rose to 5 GB on the Hobby plan.');
 });

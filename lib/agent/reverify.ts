@@ -128,5 +128,6 @@ export function atMostTwoSentences(text: string): string {
     .split('\n')
     .filter((line) => !/^\s*(\||#)/.test(line))
     .join(' ');
-  return (prose.match(/[^.!?]+[.!?]+/g) ?? []).slice(0, 2).join(' ').replace(/\s+/g, ' ').trim();
+  const sentences = prose.replace(/\s+/g, ' ').trim().split(/(?<=[.!?])\s+(?=[A-Z"“(])/);
+  return sentences.slice(0, 2).join(' ').trim();
 }
