@@ -9,7 +9,8 @@
     "seed": "tsx scripts/seed.ts",
     "eval": "tsx scripts/eval.ts",
     "test": "vitest run",
-    "demo": "tsx scripts/demo.ts"
+    "demo": "tsx scripts/demo.ts",
+    "eval:router": "tsx scripts/eval-router.ts"
   },
   "dependencies": {
     "@ai-sdk/groq": "^2.0.63",

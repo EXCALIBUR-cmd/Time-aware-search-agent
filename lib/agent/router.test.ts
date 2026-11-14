@@ -1,5 +1,13 @@
 import { expect, test } from 'vitest';
 import { applyOverrides, parsePlan } from './router';
+import { ROUTING_CASES } from './routing-cases';
+
+test.each(ROUTING_CASES)('the rules never overrule a correct routing: $expected for "$text"', (routingCase) => {
+  const hasClaimsInMemory = routingCase.subjectsInMemory.length > 0;
+  expect(applyOverrides(routingCase.expected, routingCase.text, routingCase.hasPastDate, hasClaimsInMemory)).toBe(
+    routingCase.expected,
+  );
+});
 
 test('the router plan is validated: a mode and at most 4 trimmed, non-empty queries', () => {
   expect(parsePlan('{"mode":"fresh","queries":["Neon pricing"," Supabase pricing "]}')).toEqual({

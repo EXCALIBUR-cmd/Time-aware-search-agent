@@ -52,6 +52,7 @@ Things to know:
 | `npm run demo` | Seeds `data/demo.db` and starts the app on it with the clock fixed to 9 Nov 2026 |
 | `npm test` | Unit tests for date resolution and memory |
 | `npm run seed` | Only writes the demo history into `data/demo.db` (`demo` and `eval` already do this) |
+| `npm run eval:router` | Routes 18 labelled messages with the live router and prints accuracy and latency. Needs `GROQ_API_KEY` |
 | `npm run eval` | Replays 8 scenarios against the agent on `data/demo.db` and prints a pass/fail table with time to first token. Needs both keys |
 
 ## Where things are
