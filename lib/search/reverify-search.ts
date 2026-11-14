@@ -15,6 +15,21 @@ const OFFICIAL_RESULTS_PER_VENDOR = 2;
 const THIRD_PARTY_SEARCHES_PER_TURN = 2;
 const THIRD_PARTY_RESULTS_PER_CLAIM = 2;
 
+const PRICING_OR_DOCS_PATH = /\/(pricing|docs)(\/|$)/;
+const ANNOUNCEMENT_PATH = /\/(blog|news|press)(\/|$)/;
+
+export function pageTypeRank(url: string, vendorPricingPage?: string): number {
+  if (url === vendorPricingPage) return 0;
+  try {
+    const { hostname, pathname } = new URL(url);
+    if (PRICING_OR_DOCS_PATH.test(pathname.toLowerCase()) || hostname.startsWith('docs.')) return 0;
+    if (ANNOUNCEMENT_PATH.test(pathname.toLowerCase()) || hostname.startsWith('blog.')) return 2;
+    return 1;
+  } catch {
+    return 1;
+  }
+}
+
 export function planVendorChecks(claims: ClaimToCheck[]): VendorCheck[] {
   const byVendor = new Map<string, VendorCheck>();
   for (const claim of claims) {
@@ -72,7 +87,9 @@ export async function findEvidence(checks: VendorCheck[], sources: EvidenceSourc
     .slice(0, THIRD_PARTY_SEARCHES_PER_TURN);
   const thirdParty = await Promise.all(unconfirmed.map(({ check, attribute }) => thirdPartyEvidence(check, attribute, sources)));
   const official = officialPerVendor.flatMap((results, i) =>
-    results.map((result) => ({
+    [...results]
+      .sort((a, b) => pageTypeRank(a.url, checks[i].officialUrl) - pageTypeRank(b.url, checks[i].officialUrl))
+      .map((result) => ({
       ...result,
       sourceType: 'official' as const,
       content: passagePerClaim(result.content, checks[i].attributes, `${checks[i].vendor} ${checks[i].attributes.join(' ')}`),

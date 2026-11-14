@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 import { classifySource, officialDomainFor } from './official';
 import { passagePerClaim } from './passages';
-import { findEvidence, isAnsweredBy, planVendorChecks, type EvidenceSources } from './reverify-search';
+import { findEvidence, isAnsweredBy, pageTypeRank, planVendorChecks, type EvidenceSources } from './reverify-search';
 import type { SearchResult } from './tavily';
 
 const PRICED = 'The Launch plan costs $19/month and storage is $0.35 per GB-month.';
@@ -181,4 +181,14 @@ test('a long official page gives the model a passage for each claim, not one win
   expect(passage).toContain('$5 a month');
   expect(passage.length).toBeLessThanOrEqual(1810);
   expect(passagePerClaim('A short page.', ['anything'], 'X')).toBe('A short page.');
+});
+
+test('official pages rank by type: pricing and docs first, blog and news last', () => {
+  expect(pageTypeRank('https://neon.com/pricing')).toBe(0);
+  expect(pageTypeRank('https://neon.com/docs/introduction/plans')).toBe(0);
+  expect(pageTypeRank('https://docs.railway.com/pricing/plans')).toBe(0);
+  expect(pageTypeRank('https://railway.com/about')).toBe(1);
+  expect(pageTypeRank('https://neon.com/blog/new-usage-based-pricing')).toBe(2);
+  expect(pageTypeRank('https://supabase.com/news/pricing-update')).toBe(2);
+  expect(pageTypeRank('https://railway.com/pricing-explained', 'https://railway.com/pricing-explained')).toBe(0);
 });

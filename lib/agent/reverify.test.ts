@@ -151,3 +151,51 @@ test('the context keeps at most two sentences, without breaking a price at its d
   expect(atMostTwoSentences(answer)).toBe('Neon now bills $0.14 per CU-hour, up from $0.106. The change took effect in November.');
   expect(atMostTwoSentences('Storage rose to 5 GB on the Hobby plan.')).toBe('Storage rose to 5 GB on the Hobby plan.');
 });
+
+const neonDocs: NumberedResult = {
+  n: 1,
+  title: 'Neon plans',
+  url: 'https://neon.com/docs/introduction/plans',
+  sourceType: 'official',
+  content: 'Launch: $0.106/CU-hour',
+};
+const neonBlog: NumberedResult = {
+  n: 2,
+  title: 'Neon blog',
+  url: 'https://neon.com/blog/new-usage-based-pricing',
+  sourceType: 'official',
+  content: 'Pay-as-you-go compute at $0.14 per CU-hour.',
+};
+const neonRows = claimsToCompare([claim('Neon', 'Launch plan compute price', '$0.106 per CU-hour')]);
+
+test('two official sources with different values are a conflict, not a change', () => {
+  const [row] = checkRows(
+    neonRows,
+    [
+      { claim_id: 'c1', now_value: '$0.14 per CU-hour', quote: 'Pay-as-you-go compute at $0.14 per CU-hour.', source_url: neonBlog.url },
+      { claim_id: 'c1', now_value: '$0.106/CU-hour', quote: 'Launch: $0.106/CU-hour', source_url: neonDocs.url },
+    ],
+    [neonDocs, neonBlog],
+  );
+  expect(row).toMatchObject({ now: null, changed: 'unknown' });
+  const table = renderTable([row], tz);
+  expect(table).toContain(
+    'Conflicting sources: $0.106/CU-hour (https://neon.com/docs/introduction/plans) vs $0.14 per CU-hour (https://neon.com/blog/new-usage-based-pricing)',
+  );
+  expect(table).toContain('| Unknown | [1], [2] |');
+  expect(renderVerdict([row], since)).toBe('**Nothing has changed since these prices were checked on 3 to 13 Nov; one price has conflicting sources.**');
+});
+
+test('when official sources agree, the pricing or docs page is the one cited, not the blog', () => {
+  const blogAgreeing = { ...neonBlog, content: 'Launch compute is $0.106 per CU-hour.' };
+  const [row] = checkRows(
+    neonRows,
+    [
+      { claim_id: 'c1', now_value: '$0.106 per CU-hour', quote: 'Launch compute is $0.106 per CU-hour.', source_url: blogAgreeing.url },
+      { claim_id: 'c1', now_value: '$0.106/CU-hour', quote: 'Launch: $0.106/CU-hour', source_url: neonDocs.url },
+    ],
+    [blogAgreeing, neonDocs],
+  );
+  expect(row).toMatchObject({ changed: 'no', now: '$0.106/CU-hour' });
+  expect(row.source?.url).toBe(neonDocs.url);
+});
