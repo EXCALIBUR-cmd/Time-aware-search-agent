@@ -45,6 +45,12 @@ const host = (url: string) => {
 };
 
 const ADDING_CITATIONS = 'Adding citations';
+const EXAMPLE_QUESTIONS = [
+  'What’s the latest Next.js version?',
+  'Compare Postgres hosting prices for Neon, Supabase and Railway',
+  'What did I ask you last Tuesday?',
+  'Has any pricing changed since then?',
+];
 const VERDICT_LINE = /^\*\*([^*\n]+)\*\*[ \t]*\n/;
 const CHANGED_CELL: Record<string, string> = {
   Yes: 'rounded bg-amber-100 px-1.5 py-0.5 font-medium text-amber-900',
@@ -182,13 +188,17 @@ export default function Page() {
   };
   useEffect(scrollToBottomReturningNothing, [messages, statusLine]);
 
-  function submit(e: FormEvent) {
-    e.preventDefault();
-    const text = input.trim();
+  function ask(question: string) {
+    const text = question.trim();
     if (!text || busy) return;
     setStatusLine('');
     setInput('');
     void sendMessage({ text }, DEV && simulated ? { body: { now: new Date(simulated).toISOString() } } : undefined);
+  }
+
+  function submit(e: FormEvent) {
+    e.preventDefault();
+    ask(input);
   }
 
   return (
@@ -246,7 +256,27 @@ export default function Page() {
         <div className="flex-1 overflow-y-auto">
           <div className="mx-auto max-w-3xl space-y-5 p-4">
             {messages.length === 0 && (
-              <p className="pt-24 text-center text-zinc-500">Ask something current, or about a past conversation.</p>
+              <section aria-labelledby="empty-title" className="pt-16 sm:pt-24">
+                <h1 id="empty-title" className="text-lg font-semibold">
+                  Search the web, with a memory
+                </h1>
+                <p className="mt-1 text-sm text-zinc-600">
+                  Answers current questions with cited sources, remembers what you discussed and when, and re-checks old answers against today’s web.
+                </p>
+                <ul className="mt-6 grid gap-2 sm:grid-cols-2">
+                  {EXAMPLE_QUESTIONS.map((question) => (
+                    <li key={question}>
+                      <button
+                        type="button"
+                        onClick={() => ask(question)}
+                        className="flex min-h-11 w-full items-center rounded-lg border border-zinc-200 px-3 py-2 text-left text-sm hover:border-zinc-300 hover:bg-zinc-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-500"
+                      >
+                        {question}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </section>
             )}
             {messages.map((m, i) => (
               <Message
