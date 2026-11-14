@@ -1,6 +1,7 @@
 import { formatInTimeZone } from 'date-fns-tz';
 import { z } from 'zod';
 import type { MemoryClaim } from '../memory/recall';
+import type { Claim } from '../memory/store';
 import type { NumberedResult } from '../search/web-search-tool';
 import { mergeSameClaims } from '../memory/claims';
 import { pageTypeRank } from '../search/reverify-search';
@@ -93,6 +94,7 @@ function byAuthority(a: Verified, b: Verified): number {
 }
 
 const SHORT_QUOTE_CHARS = 80;
+export const NO_LONGER_OFFERED = 'No longer offered';
 
 function shortQuote(quote: string): string {
   const plain = quote.replace(/\*\*/g, '').replace(/\s*\|\s*/g, ' · ').replace(/\s+/g, ' ').replace(/^[\s·]+|[\s·]+$/g, '');
@@ -103,7 +105,8 @@ function shortQuote(quote: string): string {
 function verifiedPlanChange(value: ExtractedValue, row: ClaimRow, sources: NumberedResult[]): Verified | undefined {
   if (value.status !== 'plan_changed' || !value.quote || !value.source_url) return undefined;
   const source = sources.find((candidate) => candidate.url === value.source_url && candidate.sourceType === 'official');
-  if (!source || !quoteAppearsIn(source.content, value.quote) || containsValue(value.quote, row.value)) return undefined;
+  const oldValueStillListed = row.value !== NO_LONGER_OFFERED && containsValue(value.quote, row.value);
+  if (!source || !quoteAppearsIn(source.content, value.quote) || oldValueStillListed) return undefined;
   return { now: '', source, quote: value.quote };
 }
 
@@ -124,7 +127,8 @@ export function checkRows(rows: ClaimRow[], extracted: ExtractedValue[], sources
         .sort(byAuthority);
       if (!planChange) return { ...row, now: null, changed: 'unknown' };
       const { source, quote } = planChange;
-      return { ...row, now: null, changed: 'yes', source, quote, noLongerOffered: shortQuote(quote) };
+      const changed = compareValues(row.value, NO_LONGER_OFFERED);
+      return { ...row, now: NO_LONGER_OFFERED, changed, source, quote, noLongerOffered: shortQuote(quote) };
     }
     const official = verified.filter((value) => value.source.sourceType !== 'third_party');
     const disagreeing = official.find((value) => compareValues(official[0].now, value.now) === 'yes');
@@ -156,6 +160,13 @@ export function renderVerdict(rows: CheckedRow[], since: string): string {
   return `**${[lead, ...caveats].join('; ')}.**`;
 }
 
+export const claimsToSave = (rows: CheckedRow[]): Claim[] =>
+  rows.flatMap((row) =>
+    row.now && row.source
+      ? [{ subject: row.subject, attribute: row.attribute, value: row.now, sourceUrl: row.source.url, sourceType: row.source.sourceType, quote: row.quote }]
+      : [],
+  );
+
 const CHANGED_LABEL: Record<Changed, string> = { yes: 'Yes', no: 'No', unknown: 'Unknown' };
 
 export function renderTable(rows: CheckedRow[], tz: string): string {
@@ -166,7 +177,7 @@ export function renderTable(rows: CheckedRow[], tz: string): string {
     const now = first && second
       ? `Conflicting sources: ${first.now} (${first.source.url}) vs ${second.now} (${second.source.url})`
       : row.noLongerOffered
-        ? `No longer offered: “${row.noLongerOffered}”`
+        ? `${NO_LONGER_OFFERED}: “${row.noLongerOffered}”`
         : (row.now ?? "Couldn't confirm");
     const source = first && second
       ? `[${first.source.n}], [${second.source.n}]`

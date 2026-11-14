@@ -15,7 +15,7 @@ import { errorMessage, userFacingError } from './budget';
 import { requireInlineCitations } from './cite';
 import { answerWithFallback } from './fallback';
 import { planTurn } from './plan';
-import { claimsToCompare } from './reverify';
+import { claimsToCompare, claimsToSave } from './reverify';
 import { answerReverification } from './reverify-answer';
 
 const HISTORY_TURNS = 12;
@@ -121,13 +121,8 @@ export function runAgent({
           writer,
           status,
         );
-        const confirmed = checked.rows.flatMap((row) =>
-          row.now && row.source
-            ? [{ subject: row.subject, attribute: row.attribute, value: row.now, sourceUrl: row.source.url, sourceType: row.source.sourceType }]
-            : [],
-        );
         extractFactsAboutTheUser();
-        saveAnswer(checked.markdown, checked.modelId, confirmed);
+        saveAnswer(checked.markdown, checked.modelId, claimsToSave(checked.rows));
         return;
       }
 

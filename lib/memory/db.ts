@@ -36,7 +36,8 @@ CREATE TABLE IF NOT EXISTS claims (
   value TEXT NOT NULL,
   source_url TEXT,
   checked_at TEXT NOT NULL,
-  source_type TEXT
+  source_type TEXT,
+  quote TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_claims_subject ON claims(subject);
 CREATE TABLE IF NOT EXISTS search_cache (
@@ -69,6 +70,12 @@ function addCitedSourcesToOlderMessages(opened: Database.Database): void {
   opened.exec('ALTER TABLE messages ADD COLUMN sources TEXT');
 }
 
+function addQuoteToOlderClaims(opened: Database.Database): void {
+  const columns = opened.pragma('table_info(claims)') as { name: string }[];
+  if (columns.some((c) => c.name === 'quote')) return;
+  opened.exec('ALTER TABLE claims ADD COLUMN quote TEXT');
+}
+
 function addSourceTypeToOlderClaims(opened: Database.Database): void {
   const columns = opened.pragma('table_info(claims)') as { name: string }[];
   if (columns.some((c) => c.name === 'source_type')) return;
@@ -99,6 +106,7 @@ export function openDb(file = dbPath()): Database.Database {
   addAnsweringModelToOlderDatabases(opened);
   addCitedSourcesToOlderMessages(opened);
   addSourceTypeToOlderClaims(opened);
+  addQuoteToOlderClaims(opened);
   keepUserFactHistoryInOlderDatabases(opened);
   return opened;
 }

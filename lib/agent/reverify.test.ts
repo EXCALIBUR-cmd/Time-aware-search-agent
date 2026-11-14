@@ -1,7 +1,20 @@
 import { expect, test } from 'vitest';
 import type { MemoryClaim } from '../memory/recall';
 import type { NumberedResult } from '../search/web-search-tool';
-import { atMostTwoSentences, checkRows, claimsToCompare, quoteAppearsIn, renderTable, renderVerdict, type CheckedRow, type ClaimRow } from './reverify';
+import { getDb, openDb } from '../memory/db';
+import { recall } from '../memory/recall';
+import { saveClaims, saveMessage } from '../memory/store';
+import {
+  atMostTwoSentences,
+  checkRows,
+  claimsToCompare,
+  claimsToSave,
+  quoteAppearsIn,
+  renderTable,
+  renderVerdict,
+  type CheckedRow,
+  type ClaimRow,
+} from './reverify';
 import { compareValues, containsValue } from './values';
 
 const tz = 'Asia/Kolkata';
@@ -240,7 +253,7 @@ test('Neon $19/month Launch against a usage-based pricing page is reported as no
     checkRows(neonRows, [{ claim_id: 'c1', status: 'plan_changed', now_value: null, quote, source_url: page.url }], [page])[0];
 
   const row = planChanged(usageQuote);
-  expect(row).toMatchObject({ now: null, changed: 'yes', source: neonPricing });
+  expect(row).toMatchObject({ now: 'No longer offered', changed: 'yes', source: neonPricing });
   expect(renderTable([row], tz)).toContain(
     '| Neon · Launch plan price | $19/month (3 Nov) | No longer offered: “Pay for what you use. Launch compute is $0.106 per CU-hour, with no monthly…” | Yes | [2] |',
   );
@@ -267,4 +280,38 @@ test('a long plan-change quote is shortened at a word for the Now cell', () => {
   const page: NumberedResult = { n: 1, title: 'Neon', url: 'https://neon.com/pricing', sourceType: 'official', content: longQuote };
   const [row] = checkRows(neonRows, [{ claim_id: 'c1', status: 'plan_changed', now_value: null, quote: longQuote, source_url: page.url }], [page]);
   expect(row.noLongerOffered).toBe('Pay for what you use: compute, storage, branches and data transfer are all…');
+});
+
+test('a plan change is saved as a "No longer offered" claim with its quote, and the next re-check reports it as unchanged', () => {
+  openDb(':memory:');
+  const usageQuote = 'Pay for what you use. Launch compute is $0.106 per CU-hour.';
+  const neonPricing: NumberedResult = { n: 1, title: 'Neon pricing', url: 'https://neon.com/pricing', sourceType: 'official', content: usageQuote };
+  const planChanged = { claim_id: 'c1', status: 'plan_changed' as const, now_value: null, quote: usageQuote, source_url: neonPricing.url };
+  const nov3 = new Date('2026-11-03T15:30:00+05:30');
+  const nov9 = new Date('2026-11-09T10:00:00+05:30');
+  const nov12 = new Date('2026-11-12T10:00:00+05:30');
+  const firstAnswer = saveMessage({ conversationId: 'pg', role: 'assistant', content: 'Neon Launch is $19/month.', at: nov3 });
+  saveClaims(firstAnswer, [{ subject: 'Neon', attribute: 'Launch plan price', value: '$19/month', sourceUrl: neonPricing.url }], nov3);
+  const recalledAt = (at: Date) => claimsToCompare(recall({ ranges: [], topicTerms: ['neon'], now: at }).flatMap((item) => item.claims));
+
+  const firstCheck = checkRows(recalledAt(nov9), [planChanged], [neonPricing]);
+  expect(firstCheck[0].changed).toBe('yes');
+  const toSave = claimsToSave(firstCheck);
+  expect(toSave).toEqual([
+    { subject: 'Neon', attribute: 'Launch plan price', value: 'No longer offered', sourceUrl: neonPricing.url, sourceType: 'official', quote: usageQuote },
+  ]);
+  const recheckAnswer = saveMessage({ conversationId: 're', role: 'assistant', content: 'One price changed.', at: nov9 });
+  saveClaims(recheckAnswer, toSave, nov9);
+  expect(getDb().prepare("SELECT quote FROM claims WHERE value = 'No longer offered'").get()).toEqual({ quote: usageQuote });
+
+  const later = recalledAt(nov12);
+  expect(later.map((row) => [row.value, row.checked_at.slice(0, 10)])).toEqual([['No longer offered', '2026-11-09']]);
+  const secondCheck = checkRows(later, [planChanged], [neonPricing]);
+  expect(secondCheck[0]).toMatchObject({ now: 'No longer offered', changed: 'no' });
+  expect(renderTable(secondCheck, tz)).toContain('| No longer offered (9 Nov) | No longer offered: “Pay for what you use. Launch compute is $0.106 per CU-hour.” | No | [1] |');
+  expect(renderVerdict(secondCheck, since)).toBe(`**Nothing has changed since ${since}.**`);
+
+  const backWithAPrice = { ...neonPricing, content: 'Launch: $25/month' };
+  const priceAgain = checkRows(later, [{ claim_id: 'c1', status: 'found', now_value: '$25/month', quote: 'Launch: $25/month', source_url: neonPricing.url }], [backWithAPrice]);
+  expect(priceAgain[0]).toMatchObject({ now: '$25/month', changed: 'yes' });
 });
