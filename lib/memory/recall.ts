@@ -1,6 +1,7 @@
 import type { TimeRange } from '../time/resolve';
 import { classifySource } from '../search/official';
 import type { SourceType } from '../search/tavily';
+import { keepOnlyNewestClaims } from './claims';
 import { getDb } from './db';
 import type { Role } from './store';
 
@@ -89,5 +90,5 @@ export function recall(q: {
       if (add(h.ref_id, 'topic')) topical++;
     }
   }
-  return items;
+  return keepOnlyNewestClaims(items);
 }

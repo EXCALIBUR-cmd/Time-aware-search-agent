@@ -2,7 +2,7 @@ import { formatInTimeZone } from 'date-fns-tz';
 import { z } from 'zod';
 import type { MemoryClaim } from '../memory/recall';
 import type { NumberedResult } from '../search/web-search-tool';
-import { distinctiveWords } from '../search/passages';
+import { mergeSameClaims } from '../memory/claims';
 import { pageTypeRank } from '../search/reverify-search';
 import { compareValues, containsValue, normaliseQuoteText, type Changed } from './values';
 
@@ -39,24 +39,10 @@ Reply with JSON only: {"values":[{"claim_id":"c1","now_value":"$5/month","quote"
 - When more than one source states a claim's value, return one entry per source, all with the same claim_id.
 - If no source states the value, use null for now_value, quote and source_url. Never guess.`;
 
-const sameThingKey = (claim: MemoryClaim) =>
-  [...new Set(distinctiveWords(`${claim.subject} ${claim.attribute}`))].sort().join(' ');
-
-export function claimsToCompare(claims: MemoryClaim[]): ClaimRow[] {
-  const merged = new Map<string, MemoryClaim>();
-  for (const claim of claims) {
-    const key = sameThingKey(claim);
-    const seen = merged.get(key);
-    if (!seen) {
-      merged.set(key, claim);
-      continue;
-    }
-    const newest = claim.checked_at > seen.checked_at ? claim : seen;
-    const shortestName = claim.subject.length < seen.subject.length ? claim : seen;
-    merged.set(key, { ...newest, subject: shortestName.subject, attribute: shortestName.attribute });
-  }
-  return [...merged.values()].slice(0, MAX_ROWS).map((claim, i) => ({ ...claim, id: `c${i + 1}` }));
-}
+export const claimsToCompare = (claims: MemoryClaim[]): ClaimRow[] =>
+  mergeSameClaims(claims)
+    .slice(0, MAX_ROWS)
+    .map((claim, i) => ({ ...claim, id: `c${i + 1}` }));
 
 export function extractionPrompt(rows: ClaimRow[], sources: NumberedResult[]): string {
   const claims = rows.map((row) => `${row.id} · ${row.subject} · ${row.attribute} · was ${row.value}`);

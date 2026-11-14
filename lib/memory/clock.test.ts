@@ -61,7 +61,7 @@ test('a claim checked after now is not linked yet', () => {
   saveClaims(answer, [{ subject: 'Neon', attribute: 'Launch plan price', value: '$25/month' }], at(8));
   const values = (now: Date) => recall({ ranges: [], topicTerms: ['neon'], now }).flatMap((m) => m.claims.map((c) => c.value));
   expect(values(at(3))).toEqual(['$19/month']);
-  expect(values(at(12))).toEqual(['$19/month', '$25/month']);
+  expect(values(at(12))).toEqual(['$25/month']);
 });
 
 test('a claim stores whether its source is official, and recall lists official sources first', () => {
@@ -128,4 +128,31 @@ test('migration adds the model column to a messages table created before it exis
   ]);
   db.close();
   for (const suffix of ['', '-wal', '-shm']) rmSync(file + suffix, { force: true });
+});
+
+test('duplicate claims saved under different names are read as one, with the newest value and the shortest name', () => {
+  const first = saveMessage({ conversationId: 'c3', role: 'assistant', content: 'Supabase and Neon prices', at: at(3, '09:05') });
+  saveClaims(
+    first,
+    [
+      { subject: 'Supabase', attribute: 'Pro plan database storage', value: '8 GB', sourceUrl: 'https://supabase.com/pricing' },
+      { subject: 'Neon', attribute: 'Launch plan compute price', value: '$0.106 per CU-hour', sourceUrl: 'https://neon.com/pricing' },
+    ],
+    at(3, '09:05'),
+  );
+  const later = saveMessage({ conversationId: 'c8', role: 'assistant', content: 'Supabase and Neon re-checked', at: at(8, '11:00') });
+  saveClaims(
+    later,
+    [
+      { subject: 'Supabase Pro plan DB storage', attribute: 'limit', value: '8 GB', sourceUrl: 'https://supabase.com/pricing' },
+      { subject: 'Neon Launch compute price', attribute: 'price per CU-hour', value: '$0.14 per CU-hour', sourceUrl: 'https://neon.com/pricing' },
+    ],
+    at(8, '11:00'),
+  );
+  const claims = recall({ ranges: [], topicTerms: ['supabase', 'neon'], now: at(12) }).flatMap((m) => m.claims);
+  expect(claims.map((c) => [c.subject, c.attribute, c.value]).sort()).toEqual([
+    ['Neon', 'Launch plan compute price', '$0.14 per CU-hour'],
+    ['Supabase', 'Pro plan database storage', '8 GB'],
+  ]);
+  expect(getDb().prepare('SELECT count(*) AS n FROM claims').get()).toEqual({ n: 4 });
 });
