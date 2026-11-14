@@ -44,7 +44,9 @@ const host = (url: string) => {
   }
 };
 
-function Message({ message }: { message: UIMessage }) {
+const ADDING_CITATIONS = 'Adding citations';
+
+function Message({ message, citing = false }: { message: UIMessage; citing?: boolean }) {
   const finalAnswer = message.parts.flatMap((p) => (p.type === 'data-final-answer' ? [String(p.data)] : []))[0];
   const text = finalAnswer ?? message.parts.map((p) => (p.type === 'text' ? p.text : '')).join('');
   const sources = citedSources(
@@ -57,12 +59,17 @@ function Message({ message }: { message: UIMessage }) {
   }
   return (
     <div className="md">
+      <div
+        key={finalAnswer === undefined ? 'draft' : 'final'}
+        className={finalAnswer !== undefined ? 'fade-in' : citing ? 'opacity-50 transition-opacity duration-300' : ''}
+      >
       <Markdown
         remarkPlugins={[remarkGfm]}
         components={{ a: ({ node: _node, ...props }) => <a {...props} target="_blank" rel="noreferrer" /> }}
       >
         {text}
       </Markdown>
+      </div>
       {sources.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
           {sources.map((s) => (
@@ -201,8 +208,12 @@ export default function Page() {
             {messages.length === 0 && (
               <p className="pt-24 text-center text-zinc-500">Ask something current, or about a past conversation.</p>
             )}
-            {messages.map((m) => (
-              <Message key={m.id} message={m} />
+            {messages.map((m, i) => (
+              <Message
+                key={m.id}
+                message={m}
+                citing={busy && i === messages.length - 1 && statusLine.startsWith(ADDING_CITATIONS)}
+              />
             ))}
             {busy && statusLine && (
               <p role="status" className="animate-pulse text-sm text-zinc-500">
