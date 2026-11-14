@@ -32,6 +32,8 @@ test('a re-verification answer is told to lead with a dated verdict and to carry
   expect(instructions).toContain(`"Couldn't confirm" is not a change.`);
   expect(instructions).not.toContain('Two prices changed');
   expect(instructions).toContain('No heading or title anywhere in the answer.');
+  expect(instructions).toContain('a markdown table with the columns | Subject | Then (date) | Now | Changed? | Source |');
+  expect(instructions).not.toContain(' · ');
   expect(instructions).toContain('End with a "Sources" list of only the results you cited, each listed once');
 });
 
