@@ -45,7 +45,8 @@ const host = (url: string) => {
 };
 
 function Message({ message }: { message: UIMessage }) {
-  const text = message.parts.map((p) => (p.type === 'text' ? p.text : '')).join('');
+  const finalAnswer = message.parts.flatMap((p) => (p.type === 'data-final-answer' ? [String(p.data)] : []))[0];
+  const text = finalAnswer ?? message.parts.map((p) => (p.type === 'text' ? p.text : '')).join('');
   const sources = citedSources(
     text,
     message.parts.filter((p) => p.type === 'source-url'),

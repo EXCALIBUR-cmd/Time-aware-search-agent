@@ -12,6 +12,7 @@ import {
 } from '../search/web-search-tool';
 import { ANSWER_WITHOUT_SEARCHING_AGAIN, joinSections, NO_TOOLS, streamAnswer, type AnswerRequest } from './answer';
 import { errorMessage, userFacingError } from './budget';
+import { requireInlineCitations } from './cite';
 import { answerWithFallback } from './fallback';
 import { planTurn } from './plan';
 import { claimsToCompare } from './reverify';
@@ -71,13 +72,13 @@ export function runAgent({
 
       const messages: ModelMessage[] = [...plan.prompt.history, { role: 'user', content: text }];
       const promptWithoutResults = [plan.prompt.instructions, plan.prompt.profile, plan.prompt.memory];
-      const onAnswerFinished = (answerText: string, modelId: string, checkedClaims?: Claim[]) => {
-        if (mentionsSelf(text)) {
-          void extractUserFacts(text)
-            .then((facts) => saveUserFacts(facts, userMessageId, at))
-            .catch(logFailure('user fact extraction'));
-        }
-        if (!answerText) return;
+      const extractFactsAboutTheUser = () => {
+        if (!mentionsSelf(text)) return;
+        void extractUserFacts(text)
+          .then((facts) => saveUserFacts(facts, userMessageId, at))
+          .catch(logFailure('user fact extraction'));
+      };
+      const saveAnswer = (answerText: string, modelId: string, checkedClaims?: Claim[]) => {
         const id = saveMessage({ conversationId, role: 'assistant', content: answerText, at: clock(), answeredByModel: modelId });
         if (checkedClaims) {
           saveClaims(id, checkedClaims, clock());
@@ -108,10 +109,16 @@ export function runAgent({
             ? [{ subject: row.subject, attribute: row.attribute, value: row.now, sourceUrl: row.source.url, sourceType: row.source.sourceType }]
             : [],
         );
-        onAnswerFinished(checked.markdown, checked.modelId, confirmed);
+        extractFactsAboutTheUser();
+        saveAnswer(checked.markdown, checked.modelId, confirmed);
         return;
       }
 
+      let finished: { answerText: string; modelId: string } | undefined;
+      const onAnswerFinished = (answerText: string, modelId: string) => {
+        extractFactsAboutTheUser();
+        if (answerText) finished = { answerText, modelId };
+      };
       const answer = (request: AnswerRequest) => streamAnswer(request, messages, onAnswerFinished);
       const withoutTools = (modelId: string, providerOptions?: typeof FAST_MODEL_PROVIDER_OPTIONS) => {
         const everythingFoundThisTurn = sources.length
@@ -140,6 +147,11 @@ export function runAgent({
         writer,
         status,
       );
+      if (!finished) return;
+      const models = { main: finished.modelId, fast: cfg.FAST_MODEL };
+      const answerText = await requireInlineCitations(finished.answerText, sources, models, status);
+      if (answerText !== finished.answerText) writer.write({ type: 'data-final-answer', data: answerText });
+      saveAnswer(answerText, finished.modelId);
     },
   });
 }

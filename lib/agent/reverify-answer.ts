@@ -23,7 +23,7 @@ const CONTEXT_SYSTEM = `You are given a verified table of re-checked prices. Wri
 
 export type Reverification = { markdown: string; modelId: string; rows: CheckedRow[] };
 
-async function ask(modelId: string, isFastModel: boolean, system: string, prompt: string, callName: string) {
+export async function askModel(modelId: string, isFastModel: boolean, system: string, prompt: string, callName: string) {
   const estimated = logPromptSize(callName, [system, prompt]);
   const { text, usage } = await generateText({
     model: groq(modelId),
@@ -62,7 +62,7 @@ export async function answerReverification(
   status(`Checking ${input.rows.length} claims against their sources…`);
   const prompt = extractionPrompt(input.rows, input.sources);
   const extraction = await callWithFallback(
-    (modelId, isFastModel) => ask(modelId, isFastModel, EXTRACTION_SYSTEM, prompt, `${modelId} value extraction`),
+    (modelId, isFastModel) => askModel(modelId, isFastModel, EXTRACTION_SYSTEM, prompt, `${modelId} value extraction`),
     input.models,
     status,
   );
@@ -73,7 +73,7 @@ export async function answerReverification(
   const models = { main: extraction.modelId, fast: input.models.fast };
   const context = changedRows.length
     ? await callWithFallback(
-        (modelId, isFastModel) => ask(modelId, isFastModel, CONTEXT_SYSTEM, `${table}\n\nQuotes:\n${quotes}`, `${modelId} change context`),
+        (modelId, isFastModel) => askModel(modelId, isFastModel, CONTEXT_SYSTEM, `${table}\n\nQuotes:\n${quotes}`, `${modelId} change context`),
         models,
         status,
       )
