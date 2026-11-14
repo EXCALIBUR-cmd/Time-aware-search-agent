@@ -3,6 +3,7 @@ import { DEMO_NOW, saveDemoHistory } from '../../scripts/demo-history';
 import { refersToPast, resolveTime } from '../time/resolve';
 import { openDb } from './db';
 import { recall, recallTerms, topicTerms } from './recall';
+import { saveClaims, saveMessage } from './store';
 
 const tz = 'Asia/Kolkata';
 const now = new Date(DEMO_NOW);
@@ -29,9 +30,19 @@ test('on the demo data, "Last Tuesday ... Postgres hosting" recalls only the 3 N
   ]);
 });
 
-test('every topic word, "pricing" included, was what pulled in the 2 Nov CRM claims', () => {
-  const subjects = claimsFor(topicTerms(question)).map(([subject]) => subject);
-  expect(subjects).toContain('HubSpot Sales Hub');
+test('Postgres chats on 9 Nov and an unrelated chat on 3 Nov stay out of a "last Tuesday ... Postgres" recall', () => {
+  const nov9 = new Date('2026-11-09T09:00:00+05:30');
+  saveMessage({ conversationId: 'pg-today', role: 'user', content: 'Is Neon Postgres still $19?', at: nov9 });
+  const answer = saveMessage({ conversationId: 'pg-today', role: 'assistant', content: 'Neon Launch is $25/month now.', at: nov9 });
+  saveClaims(answer, [{ subject: 'Neon', attribute: 'Launch plan price', value: '$25/month', sourceUrl: 'https://neon.com/pricing' }], nov9);
+  saveMessage({ conversationId: 'k8s', role: 'user', content: 'Kubernetes or Nomad?', at: new Date('2026-11-03T18:00:00+05:30') });
+  const terms = recallTerms(question, '', true);
+  expect(claimsFor(terms)).toEqual([
+    ['Neon', '2026-11-03'],
+    ['Supabase', '2026-11-03'],
+    ['Render Postgres', '2026-11-03'],
+  ]);
+  expect(claimsFor(topicTerms(question)).map(([subject]) => subject)).not.toContain('HubSpot Sales Hub');
 });
 
 test('without a date, topic recall keeps all words and falls back to the previous question', () => {

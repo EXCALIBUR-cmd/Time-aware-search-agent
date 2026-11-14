@@ -48,10 +48,45 @@ const NOT_A_TOPIC = new Set(
   ),
 );
 
+const DAY_NUMBER = /^\d+(st|nd|rd|th)?$/;
+
 export function recallTerms(text: string, previousQuestion: string, asksAboutADate: boolean): string[] {
-  if (asksAboutADate) return topicTerms(text).filter((term) => !NOT_A_TOPIC.has(term));
+  if (asksAboutADate) return topicTerms(text).filter((term) => !NOT_A_TOPIC.has(term) && !DAY_NUMBER.test(term));
   const own = topicTerms(text);
   return own.length ? own : topicTerms(previousQuestion);
+}
+
+const IN_RANGE = `SELECT id FROM messages WHERE created_at BETWEEN @start AND @end AND created_at <= @now`;
+const ON_TOPIC_IN_RANGE = `${IN_RANGE} AND conversation_id IN (
+  SELECT conversation_id FROM messages WHERE created_at BETWEEN @start AND @end
+  AND id IN (SELECT ref_id FROM memory_fts WHERE memory_fts MATCH @match))`;
+
+function inRangeIds(ranges: TimeRange[], match: string, now: string): string[] {
+  const query = getDb().prepare(`${match ? ON_TOPIC_IN_RANGE : IN_RANGE} ORDER BY created_at, rowid LIMIT @limit`);
+  return ranges.flatMap((r) =>
+    (
+      query.all({ start: r.start.toISOString(), end: r.end.toISOString(), now, limit: MAX_DATE_ITEMS, ...(match ? { match } : {}) }) as {
+        id: string;
+      }[]
+    ).map((row) => row.id),
+  );
+}
+
+function nearestOnTopic(ranges: TimeRange[], match: string, now: string, excludeConversationId: string): string | undefined {
+  const hits = getDb()
+    .prepare(
+      `SELECT id, created_at FROM messages WHERE created_at <= ? AND conversation_id != ?
+       AND id IN (SELECT ref_id FROM memory_fts WHERE memory_fts MATCH ?)`,
+    )
+    .all(now, excludeConversationId, match) as { id: string; created_at: string }[];
+  const distance = (at: string) =>
+    Math.min(
+      ...ranges.map((r) => {
+        const t = Date.parse(at);
+        return t < r.start.getTime() ? r.start.getTime() - t : Math.max(0, t - r.end.getTime());
+      }),
+    );
+  return hits.sort((a, b) => distance(a.created_at) - distance(b.created_at))[0]?.id;
 }
 
 export function recall(q: {
@@ -81,16 +116,14 @@ export function recall(q: {
     return true;
   };
 
-  const inRange = db.prepare(
-    'SELECT id FROM messages WHERE created_at BETWEEN ? AND ? AND created_at <= ? ORDER BY created_at, rowid LIMIT ?',
-  );
-  for (const r of q.ranges) {
-    const rows = inRange.all(r.start.toISOString(), r.end.toISOString(), now, MAX_DATE_ITEMS) as { id: string }[];
-    for (const row of rows) add(row.id, 'date');
-  }
-
-  if (q.topicTerms.length) {
-    const match = q.topicTerms.map((t) => `"${t}"`).join(' OR ');
+  const match = q.topicTerms.map((t) => `"${t}"`).join(' OR ');
+  if (q.ranges.length) {
+    for (const id of inRangeIds(q.ranges, match, now)) add(id, 'date');
+    if (match && !items.length) {
+      const nearest = nearestOnTopic(q.ranges, match, now, q.excludeConversationId ?? '');
+      if (nearest) add(nearest, 'topic');
+    }
+  } else if (match) {
     const hits = db
       .prepare(
         'SELECT ref_id FROM memory_fts WHERE memory_fts MATCH ? AND created_at <= ? ORDER BY rank, created_at DESC LIMIT 60',

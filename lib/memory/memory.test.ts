@@ -2,7 +2,7 @@ import { beforeEach, expect, test } from 'vitest';
 import { resolveTime } from '../time/resolve';
 import { openDb } from './db';
 import { formatMemory, formatProfile } from './format';
-import { recall, topicTerms } from './recall';
+import { recall, recallTerms, topicTerms } from './recall';
 import { getMessages, listConversations, listUserFacts, saveClaims, saveMessage, saveUserFacts } from './store';
 
 const tz = 'Asia/Kolkata';
@@ -60,12 +60,36 @@ test('recalls a day with its claims, each carrying a date', () => {
   expect(block).toContain('claim: Neon · Launch plan price = $19/month (source: https://neon.com/pricing, official, checked 3 Nov 2026)');
 });
 
-test('returns every message inside a date range, even when no keyword matches', () => {
+test('a date without topic words returns every message inside the range', () => {
   for (let i = 0; i < 10; i++) saveMessage({ conversationId: 'more', role: 'user', content: `question ${i}`, at: nov3 });
-  const ranges = resolveTime('i told that to you on 3rd nov', now, tz);
-  const items = recall({ now, ranges, topicTerms: ['kubernetes'] });
+  const text = 'i told that to you on 3rd nov';
+  const ranges = resolveTime(text, now, tz);
+  expect(recallTerms(text, '', true)).toEqual([]);
+  const items = recall({ now, ranges, topicTerms: [] });
   expect(items).toHaveLength(12);
   expect(items.every((m) => m.match === 'date')).toBe(true);
+});
+
+test('a date and a topic keep only conversations matching both, including answers that never repeat the topic word', () => {
+  saveMessage({ conversationId: 'k8s', role: 'user', content: 'Kubernetes or Nomad?', at: nov3 });
+  saveMessage({ conversationId: 'k8s', role: 'assistant', content: 'Nomad is simpler to run.', at: nov3 });
+  const ranges = resolveTime('on 3 November', now, tz);
+  expect(recall({ now, ranges, topicTerms: ['kubernetes'] }).map((m) => m.content)).toEqual([
+    'Kubernetes or Nomad?',
+    'Nomad is simpler to run.',
+  ]);
+});
+
+test('when nothing on the asked dates matches the topic, only the nearest on-topic message comes back and memory says so', () => {
+  saveMessage({ conversationId: 'later', role: 'user', content: 'Postgres backups', at: new Date('2026-11-06T10:00:00+05:30') });
+  const ranges = resolveTime('on 4 November', now, tz);
+  const items = recall({ now, ranges, topicTerms: ['postgres'] });
+  expect(items.map((m) => [m.content, m.match])).toEqual([['Compare Postgres hosting prices', 'topic']]);
+  const block = formatMemory(items, ranges, tz);
+  expect(block).toContain('No conversations on this topic between 4 Nov 2026 and 4 Nov 2026.');
+  expect(block).toContain('[Tue 3 Nov 2026, 15:30 · "Compare Postgres hosting prices"] user:');
+  expect(block).toContain('do not re-check it now');
+  expect(recall({ now, ranges, topicTerms: ['kubernetes'] })).toEqual([]);
 });
 
 test('recalls by topic through FTS, including claim text, capped at 8', () => {
@@ -76,11 +100,11 @@ test('recalls by topic through FTS, including claim text, capped at 8', () => {
   expect(recall({ now, ranges: [], topicTerms: ['question'] })).toHaveLength(8);
 });
 
-test('date hits and topic hits combine without duplicates, and the current conversation is left out', () => {
+test('topic matches outside the asked dates are left out, and the current conversation is left out', () => {
   saveMessage({ conversationId: 'other', role: 'user', content: 'Postgres backups', at: new Date('2026-11-05T10:00:00+05:30') });
   const items = recall({ now, ranges: resolveTime('on 3 November', now, tz), topicTerms: ['postgres'] });
-  expect(items.map((m) => m.match)).toEqual(['date', 'date', 'topic']);
-  expect(formatMemory(items, [], tz)).toContain('Related past messages, matched by topic:');
+  expect(items.map((m) => m.match)).toEqual(['date', 'date']);
+  expect(formatMemory(recall({ now, ranges: [], topicTerms: ['postgres'] }), [], tz)).toContain('Related past messages, matched by topic:');
   expect(recall({ now, ranges: [], topicTerms: ['postgres'], excludeConversationId: 'pg' }).map((m) => m.content)).toEqual(['Postgres backups']);
 });
 

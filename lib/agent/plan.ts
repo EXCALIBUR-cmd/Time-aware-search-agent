@@ -47,7 +47,8 @@ export async function planTurn(turn: TurnInput, status: (text: string) => void):
   const routerFoundAPastTheRuleMissed = aboutPast && !datedByRule && ranges.length > 0;
   const items = routerFoundAPastTheRuleMissed ? recallWithin(ranges) : firstLook;
   const memory = items.length || aboutPast ? formatMemory(items, rangesWhenAboutPast, zone) : '';
-  const nothingToReverify = mode === 'reverify' && !items.length;
+  const nothingOnTheAskedDates = rangesWhenAboutPast.length > 0 && !items.some((item) => item.match === 'date');
+  const nothingToReverify = mode === 'reverify' && (!items.length || nothingOnTheAskedDates);
   if (nothingToReverify) mode = 'recall';
   const reverify = mode === 'reverify';
   const searchesTheWeb = mode === 'fresh' || reverify;

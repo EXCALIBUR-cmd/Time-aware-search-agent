@@ -29,14 +29,19 @@ export function formatMemory(items: MemoryItem[], ranges: TimeRange[], tz: strin
   const dated = lines('date');
   const topical = lines('topic');
   const out: string[] = [];
-  if (ranges.length) {
-    out.push(
-      ...(dated.length
-        ? dated
-        : ranges.map((r) => `No conversations found between ${day(r.start, tz)} and ${day(r.end, tz)}.`)),
-    );
+  if (ranges.length && !dated.length) {
+    const nothing = topical.length ? 'No conversations on this topic' : 'No conversations found';
+    out.push(...ranges.map((r) => `${nothing} between ${day(r.start, tz)} and ${day(r.end, tz)}.`));
   }
-  if (topical.length) out.push('Related past messages, matched by topic:', ...topical);
+  out.push(...dated);
+  if (topical.length && ranges.length) {
+    out.push(
+      'Nearest past conversation on this topic, outside the dates asked about. Say there was nothing on the asked dates, give this date, and offer to re-check it; do not re-check it now:',
+      ...topical,
+    );
+  } else if (topical.length) {
+    out.push('Related past messages, matched by topic:', ...topical);
+  }
   if (!out.length) out.push('No matching past conversations found.');
   return `<memory>\n${out.join('\n')}\n</memory>`;
 }
