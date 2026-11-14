@@ -10,7 +10,7 @@ export type RoutingContext = { previousQuestion: string; subjectsInMemory: strin
 
 const MAX_PLANNED_QUERIES = 4;
 const PREVIOUS_QUESTION_CHARS = 300;
-const ROUTER_TIMEOUT_MS = 1500;
+const ROUTER_TIMEOUT_MS = 2000;
 const PLAN_WHEN_ROUTER_FAILS: RoutingPlan = { mode: 'fresh', queries: [] };
 
 const Plan = z.object({
