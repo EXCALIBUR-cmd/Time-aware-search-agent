@@ -1,7 +1,14 @@
 import { formatInTimeZone } from 'date-fns-tz';
 import type { Mode } from './router';
 
-export type InstructionInput = { mode: Mode; now: Date; tz: string; searchedAlready: boolean; verdictSince?: string };
+export function verdictSince(claimsCheckedAt: string[], askedDays: Date[], tz: string): string | undefined {
+  const oldestClaim = [...claimsCheckedAt].sort()[0];
+  const earliestAskedDay = [...askedDays].sort((a, b) => a.getTime() - b.getTime())[0];
+  const since = oldestClaim ?? earliestAskedDay;
+  return since ? formatInTimeZone(since, tz, 'EEE d MMM') : undefined;
+}
+
+export type InstructionInput ={ mode: Mode; now: Date; tz: string; searchedAlready: boolean; verdictSince?: string };
 
 const reverifyAnswer = (since: string) =>
   `Start the answer with one bold sentence that gives the verdict, for example "**Nothing has changed since ${since}.**" or "**Two prices changed since ${since}.**", then the table: Subject · Then (date) · Now · Changed? · Source. No heading or title anywhere in the answer. Mark unclear evidence "Couldn't confirm"; never guess.`;

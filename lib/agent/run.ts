@@ -1,5 +1,4 @@
 import { groq } from '@ai-sdk/groq';
-import { formatInTimeZone } from 'date-fns-tz';
 import { createUIMessageStream, stepCountIs, streamText, type ToolSet } from 'ai';
 import { citedNumbers } from '../citations';
 import { FAST_MODEL_PROVIDER_OPTIONS, getConfig, now, tz } from '../config';
@@ -27,7 +26,7 @@ import {
   userFacingError,
 } from './budget';
 import { forwardAnswer, SMALLER_MODEL_NOTICE, worthWaitingFor } from './fallback';
-import { buildInstructions } from './prompt';
+import { buildInstructions, verdictSince } from './prompt';
 import { route } from './router';
 
 const FOLLOW_UP_SEARCHES = 1;
@@ -46,13 +45,6 @@ const logRawErrorAndDescribeForUser = (e: unknown) => {
 const joinSections = (sections: string[]) => sections.filter(Boolean).join('\n\n');
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const claimsIn = (items: MemoryItem[]) => items.flatMap((item) => item.claims);
-
-function sinceWhen(ranges: TimeRange[], items: MemoryItem[], zone: string): string | undefined {
-  const earliestAskedDay = ranges.map((r) => r.start).sort((a, b) => a.getTime() - b.getTime())[0];
-  const oldestClaimCheck = claimsIn(items).map((c) => c.checked_at).sort()[0];
-  const since = earliestAskedDay ?? oldestClaimCheck;
-  return since ? formatInTimeZone(since, zone, 'EEE d MMM') : undefined;
-}
 const subjectsIn = (items: MemoryItem[]) => [...new Set(claimsIn(items).map((claim) => claim.subject))];
 
 export function runAgent({
@@ -113,7 +105,13 @@ export function runAgent({
           now: at,
           tz: zone,
           searchedAlready,
-          verdictSince: reverify ? sinceWhen(rangesWhenAboutPast, items, zone) : undefined,
+          verdictSince: reverify
+            ? verdictSince(
+                claimsIn(items).map((claim) => claim.checked_at),
+                rangesWhenAboutPast.map((range) => range.start),
+                zone,
+              )
+            : undefined,
         }),
         profile: formatProfile(listUserFacts(at), zone),
         memory,

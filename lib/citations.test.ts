@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { buildInstructions } from './agent/prompt';
+import { buildInstructions, verdictSince } from './agent/prompt';
 import { citedNumbers, citedSources } from './citations';
 
 const source = (sourceId: string, url: string) => ({ sourceId, url });
@@ -31,6 +31,14 @@ test('a re-verification answer is told to lead with a dated verdict and to carry
   expect(instructions).toContain('"**Two prices changed since Tue 10 Nov.**"');
   expect(instructions).toContain('No heading or title anywhere in the answer.');
   expect(instructions).toContain('End with a "Sources" list of only the results you cited, each listed once');
+});
+
+test('the verdict is dated from the oldest claim compared, so it matches the table', () => {
+  const askedAbout = [new Date('2026-11-10T00:00:00+05:30')];
+  const claims = ['2026-11-13T15:07:27.553Z', '2026-11-03T07:09:00.000Z', '2026-11-03T15:04:00.000Z'];
+  expect(verdictSince(claims, askedAbout, 'Asia/Kolkata')).toBe('Tue 3 Nov');
+  expect(verdictSince([], askedAbout, 'Asia/Kolkata')).toBe('Tue 10 Nov');
+  expect(verdictSince([], [], 'Asia/Kolkata')).toBeUndefined();
 });
 
 test('other modes get no verdict instruction', () => {
