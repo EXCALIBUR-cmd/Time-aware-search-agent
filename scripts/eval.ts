@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { runAgent } from '../lib/agent/run';
 import { getConfig } from '../lib/config';
-import { DEMO_NOW } from './seed';
+import { openDb } from '../lib/memory/db';
+import { DEMO_NOW, saveDemoHistory } from './demo-history';
 
 function loadEnvFileIfPresent(): void {
   try {
@@ -13,6 +14,8 @@ function loadEnvFileIfPresent(): void {
 loadEnvFileIfPresent();
 
 process.env.AGENT_NOW = DEMO_NOW;
+openDb(':memory:');
+saveDemoHistory();
 
 const MINUTE_MS = 60_000;
 const TOKENS_PER_MINUTE_PER_MODEL = 8000;
