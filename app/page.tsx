@@ -2,7 +2,7 @@
 
 import { useChat } from '@ai-sdk/react';
 import { DefaultChatTransport, type UIMessage } from 'ai';
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { citedSources } from '@/lib/citations';
@@ -45,6 +45,14 @@ const host = (url: string) => {
 };
 
 const ADDING_CITATIONS = 'Adding citations';
+const VERDICT_LINE = /^\*\*([^*\n]+)\*\*[ \t]*\n/;
+const CHANGED_CELL: Record<string, string> = {
+  Yes: 'rounded bg-amber-100 px-1.5 py-0.5 font-medium text-amber-900',
+  No: 'text-zinc-500',
+  Unknown: 'italic text-zinc-500',
+};
+const cellText = (children: ReactNode) =>
+  (Array.isArray(children) ? children.join('') : typeof children === 'string' ? children : '').trim();
 
 function Message({ message, citing = false }: { message: UIMessage; citing?: boolean }) {
   const finalAnswer = message.parts.flatMap((p) => (p.type === 'data-final-answer' ? [String(p.data)] : []))[0];
@@ -54,6 +62,10 @@ function Message({ message, citing = false }: { message: UIMessage; citing?: boo
     message.parts.filter((p) => p.type === 'source-url'),
   );
   const notice = message.parts.flatMap((p) => (p.type === 'data-notice' ? [String(p.data)] : []))[0];
+  const isReverification = text.includes('| Changed? |');
+  const verdict = isReverification ? VERDICT_LINE.exec(text)?.[1] : undefined;
+  const body = verdict ? text.replace(VERDICT_LINE, '') : text;
+  const nothingChanged = verdict?.startsWith('Nothing has changed');
   if (message.role === 'user') {
     return <div className="ml-auto w-fit max-w-[85%] whitespace-pre-wrap rounded-2xl bg-zinc-100 px-4 py-2">{text}</div>;
   }
@@ -63,11 +75,29 @@ function Message({ message, citing = false }: { message: UIMessage; citing?: boo
         key={finalAnswer === undefined ? 'draft' : 'final'}
         className={finalAnswer !== undefined ? 'fade-in' : citing ? 'opacity-50 transition-opacity duration-300' : ''}
       >
+      {verdict && (
+        <p
+          className={`rounded-lg border px-3 py-2 text-sm font-medium ${nothingChanged ? 'border-zinc-200 bg-zinc-50 text-zinc-800' : 'border-amber-200 bg-amber-50 text-amber-900'}`}
+        >
+          {verdict}
+        </p>
+      )}
       <Markdown
         remarkPlugins={[remarkGfm]}
-        components={{ a: ({ node: _node, ...props }) => <a {...props} target="_blank" rel="noreferrer" /> }}
+        components={{
+          a: ({ node: _node, ...props }) => <a {...props} target="_blank" rel="noreferrer" />,
+          table: ({ node: _node, ...props }) => (
+            <div className="table-scroll">
+              <table {...props} />
+            </div>
+          ),
+          td: ({ node: _node, children, ...props }) => {
+            const style = isReverification ? CHANGED_CELL[cellText(children)] : undefined;
+            return <td {...props}>{style ? <span className={style}>{children}</span> : children}</td>;
+          },
+        }}
       >
-        {text}
+        {body}
       </Markdown>
       </div>
       {sources.length > 0 && (
