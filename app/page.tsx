@@ -45,6 +45,7 @@ const host = (url: string) => {
 };
 
 const ADDING_CITATIONS = 'Adding citations';
+const CLOCK_HINT = 'Simulate a different ‘today’ to test time-based memory';
 const EXAMPLE_QUESTIONS = [
   'What’s the latest Next.js version?',
   'Compare Postgres hosting prices for Neon, Supabase and Railway',
@@ -236,23 +237,45 @@ export default function Page() {
       <main className="flex min-w-0 flex-1 flex-col">
         {DEV && (
           <header className="flex justify-end border-b border-zinc-200 px-4 py-2">
-            <label className="flex items-center gap-2 text-sm text-zinc-600">
-              Today
+            <label title={CLOCK_HINT} className="flex items-center gap-2 text-sm text-zinc-600">
+              <svg aria-hidden="true" viewBox="0 0 20 20" className="size-4 fill-none stroke-current stroke-[1.5]">
+                <circle cx="10" cy="10" r="7.25" />
+                <path d="M10 6v4l2.5 2" strokeLinecap="round" />
+              </svg>
+              <span>Today</span>
               <input
                 type="datetime-local"
                 value={simulated || realNow}
                 max={realNow}
+                aria-describedby="clock-hint"
                 onFocus={() => setRealNow(toDatetimeLocalValue(new Date()))}
                 onChange={(e) => setClock(e.target.value)}
-                className="rounded border border-zinc-300 px-2 py-1 text-zinc-900"
+                className={`h-9 rounded-md border bg-white px-2 text-sm text-zinc-900 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-zinc-500 ${simulated ? 'border-amber-400' : 'border-zinc-300'}`}
               />
+              <span id="clock-hint" className="sr-only">
+                {CLOCK_HINT}
+              </span>
             </label>
           </header>
         )}
         {DEV && simulated && (
-          <p role="status" className="bg-amber-100 px-4 py-1 text-center text-xs text-amber-900">
-            Simulated date: {new Date(simulated).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })} ·{' '}
-            <button type="button" onClick={() => setClock('')} className="underline">
+          <p
+            role="status"
+            className="flex flex-wrap items-center justify-center gap-x-2 border-b border-amber-200 bg-amber-50 px-4 py-1.5 text-center text-xs text-amber-900"
+          >
+            <span aria-hidden="true" className="size-1.5 rounded-full bg-amber-500" />
+            <span>
+              Simulated date:{' '}
+              <strong className="font-semibold">
+                {new Date(simulated).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
+              </strong>
+            </span>
+            <span aria-hidden="true">·</span>
+            <button
+              type="button"
+              onClick={() => setClock('')}
+              className="inline-flex min-h-6 items-center font-medium underline underline-offset-2 hover:text-amber-950 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-700"
+            >
               Reset to real time
             </button>
           </p>
