@@ -55,6 +55,7 @@ test('the verdict sentence reads naturally with a claim date', () => {
     verdictSince: 'these prices were checked on Tue 3 Nov',
   });
   expect(instructions).toContain('"**Nothing has changed since these prices were checked on Tue 3 Nov.**"');
+  expect(instructions).toContain('End that sentence with "since these prices were checked on Tue 3 Nov." copied word for word');
 });
 
 test('other modes get no verdict instruction', () => {

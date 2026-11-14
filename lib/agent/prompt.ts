@@ -18,7 +18,7 @@ export function verdictSince(claimsCheckedAt: string[], askedDays: Date[], tz: s
 export type InstructionInput ={ mode: Mode; now: Date; tz: string; searchedAlready: boolean; verdictSince?: string };
 
 const reverifyAnswer = (since: string) =>
-  `Start the answer with one bold sentence that gives the verdict, for example "**Nothing has changed since ${since}.**" or "**Two prices changed since ${since}.**", then the table: Subject · Then (date) · Now · Changed? · Source. No heading or title anywhere in the answer. Mark unclear evidence "Couldn't confirm"; never guess.`;
+  `Start the answer with one bold sentence that gives the verdict, for example "**Nothing has changed since ${since}.**" or "**Two prices changed since ${since}.**". End that sentence with "since ${since}." copied word for word; do not reword or reformat the date. Then the table: Subject · Then (date) · Now · Changed? · Source. No heading or title anywhere in the answer. Mark unclear evidence "Couldn't confirm"; never guess.`;
 
 function whenNotSearchedYet(mode: Mode, since: string): string {
   if (mode === 'chat') return 'This turn: reply briefly and directly. No search is available.';
