@@ -25,7 +25,7 @@ npm run demo
 This does two things, the same way on any OS:
 
 - It writes three past conversations into a separate database, `data/demo.db`: a CRM shortlist (Mon 2 Nov 2026), Postgres hosting prices (Tue 3 Nov) and the Next.js version (Fri 6 Nov), each with its claims and sources. They carry a "Demo" tag in the sidebar. Your own `data/agent.db` is never touched.
-- It starts the app on that database with the clock fixed to Monday 9 November 2026, 10:00 IST (`AGENT_NOW=2026-11-09T10:00:00+05:30`), so "last Tuesday" is 3 Nov and "last week" is 2 to 8 Nov.
+- It starts the app on that database with the clock fixed to Monday 9 November 2026, 10:00 IST (`AGENT_NOW=2026-11-09T10:00:00+05:30`), so "last Tuesday" is 3 Nov and "last week" is 2 to 8 Nov. A blue banner under the header shows that demo clock, and the "Today" control shows the same date.
 
 Then ask, each in a new chat:
 
@@ -42,7 +42,7 @@ Things to know:
 - Chats you have in the demo are saved in `data/demo.db` and survive a restart. Running `npm run demo` again resets only the three tagged conversations.
 - The demo clock is a Monday, so "Monday" can mean 2 Nov or the demo's today; the agent recalls both and shows the dates.
 - To go back to the real clock and your own history, stop the demo and run `npm run dev`.
-- In dev mode the header has a "Today" control. Pick any past date and time and the agent treats it as now for date phrases, the prompt and the timestamps of new messages; web search still reads today's web. It is remembered in the browser, wins over `AGENT_NOW`, and a banner offers "Reset to real time".
+- In dev mode the header has a "Today" control. Pick any past date and time and the agent treats it as now for date phrases, the prompt and the timestamps of new messages; web search still reads today's web. When nothing is picked, it shows the clock the server is using: real time, or `AGENT_NOW` when that is set. A picked date is remembered in the browser, wins over `AGENT_NOW`, and a banner offers "Reset to real time" (or "Reset to demo clock" in the demo).
 
 ## Scripts
 

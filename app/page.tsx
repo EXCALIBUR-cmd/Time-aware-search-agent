@@ -8,7 +8,8 @@ import remarkGfm from 'remark-gfm';
 import { citedSources, withoutSourcesSection } from '@/lib/citations';
 
 type Conversation = { id: string; title: string; created_at: string; is_demo: 0 | 1 };
-type StoredSource = { sourceId: string; title: string; url: string; official: boolean };
+type ServerClock = { now: string; demoDay: string | null };
+type StoredSource ={ sourceId: string; title: string; url: string; official: boolean };
 type Stored = { id: string; role: 'user' | 'assistant'; content: string; notice: string | null; sources: StoredSource[] };
 
 const partsOf = (stored: Stored): UIMessage['parts'] => [
@@ -169,9 +170,21 @@ export default function Page() {
 
   const [simulated, setSimulated] = useState('');
   const [realNow, setRealNow] = useState('');
+  const [serverNow, setServerNow] = useState('');
+  const [demoDay, setDemoDay] = useState<string | null>(null);
+  function loadServerClock() {
+    setRealNow(toDatetimeLocalValue(new Date()));
+    fetch('/api/clock')
+      .then((r) => r.json())
+      .then((clock: ServerClock) => {
+        setServerNow(toDatetimeLocalValue(new Date(clock.now)));
+        setDemoDay(clock.demoDay);
+      })
+      .catch(() => {});
+  }
   useEffect(() => {
     if (!DEV) return;
-    setRealNow(toDatetimeLocalValue(new Date()));
+    loadServerClock();
     setSimulated(readRememberedClock());
   }, []);
   function setClock(value: string) {
@@ -307,10 +320,10 @@ export default function Page() {
               <span className="hidden sm:inline">Today</span>
               <input
                 type="datetime-local"
-                value={simulated || realNow}
+                value={simulated || serverNow}
                 max={realNow}
                 aria-describedby="clock-hint"
-                onFocus={() => setRealNow(toDatetimeLocalValue(new Date()))}
+                onFocus={loadServerClock}
                 onChange={(e) => setClock(e.target.value)}
                 className={`h-9 w-44 rounded-md border bg-white px-2 text-sm text-zinc-900 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-zinc-500 sm:w-auto dark:bg-zinc-900 dark:text-zinc-100 ${simulated ? 'border-amber-400 dark:border-amber-500' : 'border-zinc-300 dark:border-zinc-700'}`}
               />
@@ -338,8 +351,22 @@ export default function Page() {
               onClick={() => setClock('')}
               className="inline-flex min-h-6 items-center font-medium underline underline-offset-2 hover:text-amber-950 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-700 dark:hover:text-amber-100 dark:focus-visible:outline-amber-400"
             >
-              Reset to real time
+              {demoDay ? 'Reset to demo clock' : 'Reset to real time'}
             </button>
+          </p>
+        )}
+        {DEV && !simulated && demoDay && (
+          <p
+            role="status"
+            className="flex flex-wrap items-center justify-center gap-x-2 border-b border-sky-200 bg-sky-50 px-4 py-1.5 text-center text-xs text-sky-900 dark:border-sky-900/60 dark:bg-sky-950/40 dark:text-sky-200"
+          >
+            <span>
+              Demo clock: <strong className="font-semibold">{demoDay}</strong>
+            </span>
+            <span aria-hidden="true">·</span>
+            <span>
+              Sample history from 2 to 6 Nov. Run <code className="font-mono">npm run dev</code> for real time.
+            </span>
           </p>
         )}
         <div className="flex-1 overflow-y-auto">

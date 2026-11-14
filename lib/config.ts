@@ -35,6 +35,8 @@ export function now(): Date {
   return d;
 }
 
+export const isDemo = () => nonBlankEnv('AGENT_DEMO') === '1';
+
 export const mainModel = () => nonBlankEnv('MAIN_MODEL') ?? DEFAULT_MAIN_MODEL;
 
 export const tz = () => nonBlankEnv('AGENT_TZ') ?? 'Asia/Kolkata';
