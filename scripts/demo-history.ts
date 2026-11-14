@@ -1,3 +1,4 @@
+import { dayRange } from '../lib/agent/prompt';
 import { saveClaims, saveMessage, type Claim } from '../lib/memory/store';
 
 export const DEMO_NOW = '2026-11-09T10:00:00+05:30';
@@ -69,4 +70,9 @@ export function saveDemoHistory(): void {
     const answerAt = new Date(at.getTime() + 20_000);
     saveClaims(saveMessage({ id: `${c.id}-a`, conversationId: c.id, role: 'assistant', content: c.answer, at: answerAt }), c.claims, answerAt);
   }
+}
+
+export function demoHistoryDays(tz: string): string {
+  const days = DEMO_CHATS.map((chat) => new Date(chat.at).toISOString()).sort();
+  return dayRange(days[0], days[days.length - 1], tz);
 }

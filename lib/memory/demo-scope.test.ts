@@ -1,5 +1,5 @@
 import { beforeEach, expect, test } from 'vitest';
-import { DEMO_NOW, saveDemoHistory } from '../../scripts/demo-history';
+import { DEMO_NOW, demoHistoryDays, saveDemoHistory } from '../../scripts/demo-history';
 import { refersToPast, resolveTime } from '../time/resolve';
 import { openDb } from './db';
 import { recall, recallTerms, topicTerms } from './recall';
@@ -49,4 +49,8 @@ test('without a date, topic recall keeps all words and falls back to the previou
   expect(recallTerms('What did we say about pricing?', '', false)).toEqual(['pricing']);
   expect(recallTerms('And which?', 'Compare Postgres hosting prices', false)).toEqual(['compare', 'postgres', 'hosting', 'prices']);
   expect(recallTerms('What did I ask you on 3 November?', '', true)).toEqual([]);
+});
+
+test('the demo banner range comes from the demo history itself', () => {
+  expect(demoHistoryDays(tz)).toBe('2 to 6 Nov');
 });

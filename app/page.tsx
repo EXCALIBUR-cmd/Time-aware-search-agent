@@ -8,7 +8,7 @@ import remarkGfm from 'remark-gfm';
 import { citedSources, withoutSourcesSection } from '@/lib/citations';
 
 type Conversation = { id: string; title: string; created_at: string; is_demo: 0 | 1 };
-type ServerClock = { now: string; demoDay: string | null };
+type ServerClock = { now: string; demoDay: string | null; demoHistory: string | null };
 type StoredSource ={ sourceId: string; title: string; url: string; official: boolean };
 type Stored = { id: string; role: 'user' | 'assistant'; content: string; notice: string | null; sources: StoredSource[] };
 
@@ -172,6 +172,7 @@ export default function Page() {
   const [realNow, setRealNow] = useState('');
   const [serverNow, setServerNow] = useState('');
   const [demoDay, setDemoDay] = useState<string | null>(null);
+  const [demoHistory, setDemoHistory] = useState('');
   function loadServerClock() {
     setRealNow(toDatetimeLocalValue(new Date()));
     fetch('/api/clock')
@@ -179,6 +180,7 @@ export default function Page() {
       .then((clock: ServerClock) => {
         setServerNow(toDatetimeLocalValue(new Date(clock.now)));
         setDemoDay(clock.demoDay);
+        setDemoHistory(clock.demoHistory ?? '');
       })
       .catch(() => {});
   }
@@ -365,7 +367,7 @@ export default function Page() {
             </span>
             <span aria-hidden="true">·</span>
             <span>
-              Sample history from 2 to 6 Nov. Run <code className="font-mono">npm run dev</code> for real time.
+              Sample history from {demoHistory}. Run <code className="font-mono">npm run dev</code> for real time.
             </span>
           </p>
         )}
