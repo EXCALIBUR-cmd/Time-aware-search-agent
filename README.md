@@ -1,4 +1,6 @@
-# minimi Chat Agent
+# Time-Aware Search Agent
+
+Built for the minimi hiring challenge.
 
 [![CI](https://github.com/EXCALIBUR-cmd/Time-aware-search-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/EXCALIBUR-cmd/Time-aware-search-agent/actions/workflows/ci.yml)
 

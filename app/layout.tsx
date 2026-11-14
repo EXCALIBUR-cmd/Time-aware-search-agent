@@ -2,7 +2,8 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'minimi Chat Agent',
+  title: 'Time-Aware Search Agent',
+  applicationName: 'Time-Aware Search Agent',
   description: 'A chat agent with web search and time-aware memory',
 };
 
