@@ -37,6 +37,13 @@ test('an answer remembers which model wrote it; a user message has none', () => 
   expect(getMessages('pg').map((m) => m.model)).toEqual([null, null]);
 });
 
+test('an answer keeps its cited sources for the chips; messages saved without any return none', () => {
+  const cited = [{ sourceId: '3', title: 'Pricing | Supabase', url: 'https://supabase.com/pricing', official: true }];
+  saveMessage({ conversationId: 's', role: 'assistant', content: 'Pro is $25/month [3].', at: now, sources: cited });
+  expect(getMessages('s').map((m) => m.sources)).toEqual([cited]);
+  expect(getMessages('pg').map((m) => m.sources)).toEqual([[], []]);
+});
+
 test('a conversation keeps its order when the clock moves backwards', () => {
   saveMessage({ conversationId: 'mixed', role: 'user', content: 'first, said today', at: now });
   saveMessage({ conversationId: 'mixed', role: 'user', content: 'second, said on a simulated 1 Nov', at: new Date('2026-11-01T11:23:00+05:30') });

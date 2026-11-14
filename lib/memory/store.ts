@@ -5,7 +5,15 @@ import { getDb } from './db';
 
 export type Role = 'user' | 'assistant';
 export type Claim = { subject: string; attribute: string; value: string; sourceUrl?: string | null; sourceType?: SourceType };
-export type StoredMessage = { id: string; role: Role; content: string; created_at: string; model: string | null };
+export type CitedSource = { sourceId: string; title: string; url: string; official: boolean };
+export type StoredMessage = {
+  id: string;
+  role: Role;
+  content: string;
+  created_at: string;
+  model: string | null;
+  sources: CitedSource[];
+};
 export type Conversation = { id: string; title: string; created_at: string; is_demo: 0 | 1 };
 
 const index = (text: string, kind: 'message' | 'claim', recalledMessageId: string, at: string) =>
@@ -21,6 +29,7 @@ export function saveMessage(m: {
   at: Date;
   demo?: boolean;
   answeredByModel?: string;
+  sources?: CitedSource[];
 }): string {
   const db = getDb();
   const id = m.id ?? randomUUID();
@@ -32,14 +41,9 @@ export function saveMessage(m: {
       at,
       m.demo ? 1 : 0,
     );
-    db.prepare('INSERT INTO messages (id, conversation_id, role, content, created_at, model) VALUES (?, ?, ?, ?, ?, ?)').run(
-      id,
-      m.conversationId,
-      m.role,
-      m.content,
-      at,
-      m.answeredByModel ?? null,
-    );
+    db.prepare(
+      'INSERT INTO messages (id, conversation_id, role, content, created_at, model, sources) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    ).run(id, m.conversationId, m.role, m.content, at, m.answeredByModel ?? null, m.sources?.length ? JSON.stringify(m.sources) : null);
     index(m.content, 'message', id, at);
   })();
   return id;
@@ -65,10 +69,14 @@ export const listConversations = () =>
     .prepare('SELECT id, title, created_at, is_demo FROM conversations ORDER BY created_at DESC, rowid DESC')
     .all() as Conversation[];
 
-export const getMessages = (conversationId: string) =>
-  getDb()
-    .prepare('SELECT id, role, content, created_at, model FROM messages WHERE conversation_id = ? ORDER BY rowid')
-    .all(conversationId) as StoredMessage[];
+type MessageRow = Omit<StoredMessage, 'sources'> & { sources: string | null };
+
+export const getMessages = (conversationId: string): StoredMessage[] =>
+  (
+    getDb()
+      .prepare('SELECT id, role, content, created_at, model, sources FROM messages WHERE conversation_id = ? ORDER BY rowid')
+      .all(conversationId) as MessageRow[]
+  ).map((row) => ({ ...row, sources: row.sources ? (JSON.parse(row.sources) as CitedSource[]) : [] }));
 
 export type UserFact = { key: string; value: string; source_message_id: string | null; updated_at: string };
 

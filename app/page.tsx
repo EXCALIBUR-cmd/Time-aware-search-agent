@@ -8,10 +8,18 @@ import remarkGfm from 'remark-gfm';
 import { citedSources } from '@/lib/citations';
 
 type Conversation = { id: string; title: string; created_at: string; is_demo: 0 | 1 };
-type Stored = { id: string; role: 'user' | 'assistant'; content: string; notice: string | null };
+type StoredSource = { sourceId: string; title: string; url: string; official: boolean };
+type Stored = { id: string; role: 'user' | 'assistant'; content: string; notice: string | null; sources: StoredSource[] };
 
 const partsOf = (stored: Stored): UIMessage['parts'] => [
   { type: 'text', text: stored.content },
+  ...stored.sources.map(({ sourceId, title, url, official }) => ({
+    type: 'source-url' as const,
+    sourceId,
+    title,
+    url,
+    ...(official ? { providerMetadata: { agent: { sourceType: 'official' } } } : {}),
+  })),
   ...(stored.notice ? [{ type: 'data-notice' as const, data: stored.notice }] : []),
 ];
 

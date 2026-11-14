@@ -24,7 +24,8 @@ CREATE TABLE IF NOT EXISTS messages (
   role TEXT NOT NULL CHECK (role IN ('user','assistant')),
   content TEXT NOT NULL,
   created_at TEXT NOT NULL,
-  model TEXT
+  model TEXT,
+  sources TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_messages_time ON messages(created_at);
 CREATE TABLE IF NOT EXISTS claims (
@@ -62,6 +63,12 @@ function addAnsweringModelToOlderDatabases(opened: Database.Database): void {
   opened.exec('ALTER TABLE messages ADD COLUMN model TEXT');
 }
 
+function addCitedSourcesToOlderMessages(opened: Database.Database): void {
+  const columns = opened.pragma('table_info(messages)') as { name: string }[];
+  if (columns.some((c) => c.name === 'sources')) return;
+  opened.exec('ALTER TABLE messages ADD COLUMN sources TEXT');
+}
+
 function addSourceTypeToOlderClaims(opened: Database.Database): void {
   const columns = opened.pragma('table_info(claims)') as { name: string }[];
   if (columns.some((c) => c.name === 'source_type')) return;
@@ -90,6 +97,7 @@ export function openDb(file = dbPath()): Database.Database {
   opened.exec(IDEMPOTENT_SCHEMA);
   addDemoFlagToOlderDatabases(opened);
   addAnsweringModelToOlderDatabases(opened);
+  addCitedSourcesToOlderMessages(opened);
   addSourceTypeToOlderClaims(opened);
   keepUserFactHistoryInOlderDatabases(opened);
   return opened;

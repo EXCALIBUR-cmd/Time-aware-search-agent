@@ -1,5 +1,5 @@
 import { createUIMessageStream, type ModelMessage } from 'ai';
-import { citedNumbers } from '../citations';
+import { citedNumbers, citedSources } from '../citations';
 import { FAST_MODEL_PROVIDER_OPTIONS, getConfig, now, tz } from '../config';
 import { extractClaims, extractUserFacts, mentionsSelf } from '../memory/extract';
 import { getMessages, saveClaims, saveMessage, saveUserFacts, type Claim } from '../memory/store';
@@ -85,15 +85,26 @@ export function runAgent({
           .catch(logFailure('user fact extraction'));
       };
       const saveAnswer = (answerText: string, modelId: string, checkedClaims?: Claim[]) => {
-        const id = saveMessage({ conversationId, role: 'assistant', content: answerText, at: clock(), answeredByModel: modelId });
+        const chips = citedSources(
+          answerText,
+          sources.map((s) => ({ sourceId: String(s.n), title: s.title, url: s.url, official: s.sourceType === 'official' })),
+        );
+        const id = saveMessage({
+          conversationId,
+          role: 'assistant',
+          content: answerText,
+          at: clock(),
+          answeredByModel: modelId,
+          sources: chips,
+        });
         if (checkedClaims) {
           saveClaims(id, checkedClaims, clock());
           return;
         }
         const cited = citedNumbers(answerText);
-        const citedSources = sources.filter((source) => cited.has(String(source.n)));
-        if (citedSources.length) {
-          void extractClaims(answerText, citedSources)
+        const citedResults = sources.filter((source) => cited.has(String(source.n)));
+        if (citedResults.length) {
+          void extractClaims(answerText, citedResults)
             .then((claims) => saveClaims(id, claims, clock()))
             .catch(logFailure('claim extraction'));
         }
