@@ -151,6 +151,10 @@ export default function Page() {
     },
   });
   const busy = status === 'submitted' || status === 'streaming';
+  const lastMessage = messages.at(-1);
+  const answerStarted =
+    lastMessage?.role === 'assistant' && lastMessage.parts.some((p) => p.type === 'text' && p.text.trim().length > 0);
+  const showStatus = busy && statusLine !== '' && (!answerStarted || statusLine.startsWith(ADDING_CITATIONS));
 
   const [simulated, setSimulated] = useState('');
   const [realNow, setRealNow] = useState('');
@@ -285,9 +289,14 @@ export default function Page() {
                 citing={busy && i === messages.length - 1 && statusLine.startsWith(ADDING_CITATIONS)}
               />
             ))}
-            {busy && statusLine && (
-              <p role="status" className="animate-pulse text-sm text-zinc-500">
-                {statusLine}
+            {showStatus && (
+              <p role="status" aria-live="polite" className="flex min-w-0 items-center text-xs text-zinc-500">
+                <span className="truncate">{statusLine.replace(/(…|\.\.\.)$/, '')}</span>
+                <span aria-hidden="true" className="status-dots">
+                  <span>.</span>
+                  <span>.</span>
+                  <span>.</span>
+                </span>
               </p>
             )}
             {error && (
