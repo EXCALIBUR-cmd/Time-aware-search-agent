@@ -2,7 +2,7 @@ import { createUIMessageStream, type ModelMessage } from 'ai';
 import { citedNumbers } from '../citations';
 import { FAST_MODEL_PROVIDER_OPTIONS, getConfig, now, tz } from '../config';
 import { extractClaims, extractUserFacts, mentionsSelf } from '../memory/extract';
-import { getMessages, saveClaims, saveMessage, saveUserFacts } from '../memory/store';
+import { getMessages, saveClaims, saveMessage, saveUserFacts, type Claim } from '../memory/store';
 import { findEvidence } from '../search/reverify-search';
 import {
   createSearchSession,
@@ -14,6 +14,8 @@ import { ANSWER_WITHOUT_SEARCHING_AGAIN, joinSections, NO_TOOLS, streamAnswer, t
 import { errorMessage, userFacingError } from './budget';
 import { answerWithFallback } from './fallback';
 import { planTurn } from './plan';
+import { claimsToCompare } from './reverify';
+import { answerReverification } from './reverify-answer';
 
 const HISTORY_TURNS = 12;
 const logFailure = (what: string) => (e: unknown) => console.error(`${what} failed:`, errorMessage(e));
@@ -66,11 +68,10 @@ export function runAgent({
         : plan.plannedQueries.length
           ? await session.search(plan.plannedQueries)
           : undefined;
-      if (searched && plan.reverify) status(`Comparing ${plan.claimCount} claims…`);
 
       const messages: ModelMessage[] = [...plan.prompt.history, { role: 'user', content: text }];
       const promptWithoutResults = [plan.prompt.instructions, plan.prompt.profile, plan.prompt.memory];
-      const onAnswerFinished = (answerText: string, modelId: string) => {
+      const onAnswerFinished = (answerText: string, modelId: string, checkedClaims?: Claim[]) => {
         if (mentionsSelf(text)) {
           void extractUserFacts(text)
             .then((facts) => saveUserFacts(facts, userMessageId, at))
@@ -78,6 +79,10 @@ export function runAgent({
         }
         if (!answerText) return;
         const id = saveMessage({ conversationId, role: 'assistant', content: answerText, at: clock(), answeredByModel: modelId });
+        if (checkedClaims) {
+          saveClaims(id, checkedClaims, clock());
+          return;
+        }
         const cited = citedNumbers(answerText);
         const citedSources = sources.filter((source) => cited.has(String(source.n)));
         if (citedSources.length) {
@@ -86,6 +91,27 @@ export function runAgent({
             .catch(logFailure('claim extraction'));
         }
       };
+      if (plan.vendorChecks.length && searched && plan.verdictSince) {
+        const checked = await answerReverification(
+          {
+            rows: claimsToCompare(plan.claims),
+            sources,
+            since: plan.verdictSince,
+            tz: zone,
+            models: { main: cfg.MAIN_MODEL, fast: cfg.FAST_MODEL },
+          },
+          writer,
+          status,
+        );
+        const confirmed = checked.rows.flatMap((row) =>
+          row.now && row.source
+            ? [{ subject: row.subject, attribute: row.attribute, value: row.now, sourceUrl: row.source.url, sourceType: row.source.sourceType }]
+            : [],
+        );
+        onAnswerFinished(checked.markdown, checked.modelId, confirmed);
+        return;
+      }
+
       const answer = (request: AnswerRequest) => streamAnswer(request, messages, onAnswerFinished);
       const withoutTools = (modelId: string, providerOptions?: typeof FAST_MODEL_PROVIDER_OPTIONS) => {
         const everythingFoundThisTurn = sources.length

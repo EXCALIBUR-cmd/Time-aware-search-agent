@@ -121,3 +121,35 @@ export async function answerWithFallback(
   const lastAnswer = mainModelIsRateLimited ? attempts.fromFastModelWithoutTools() : attempts.fromMainModelWithoutTools();
   await forwardAnswer(lastAnswer, sink, { continuesOpenMessage: true, handsOver: false });
 }
+
+export type ModelPair = { main: string; fast: string };
+export type ModelCall<T> = (modelId: string, isFastModel: boolean) => Promise<T>;
+
+export async function callWithFallback<T>(
+  call: ModelCall<T>,
+  models: ModelPair,
+  status: (text: string) => void,
+): Promise<{ result: T; modelId: string; usedFastModel: boolean }> {
+  const viaMain = async () => ({
+    result: await call(models.main, models.main === models.fast),
+    modelId: models.main,
+    usedFastModel: false,
+  });
+  try {
+    return await viaMain();
+  } catch (error) {
+    if (!isRateLimited(error)) throw error;
+    const wait = retryAfterMs(error);
+    if (wait !== undefined && wait <= LONGEST_WAIT_WORTH_RETRYING_MS) {
+      status(`The main model is busy: retrying in ${Math.ceil(wait / 1000)} s…`);
+      await sleep(wait);
+      try {
+        return await viaMain();
+      } catch (again) {
+        if (!isRateLimited(again)) throw again;
+      }
+    }
+    status(FALLING_BACK_STATUS);
+    return { result: await call(models.fast, true), modelId: models.fast, usedFastModel: true };
+  }
+}

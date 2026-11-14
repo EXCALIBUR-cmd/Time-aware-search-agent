@@ -1,5 +1,5 @@
 import { formatMemory, formatProfile } from '../memory/format';
-import { recall, topicTerms, type MemoryItem } from '../memory/recall';
+import { recall, topicTerms, type MemoryClaim, type MemoryItem } from '../memory/recall';
 import { listUserFacts } from '../memory/store';
 import { planVendorChecks, type VendorCheck } from '../search/reverify-search';
 import { refersToPast, resolveTime, type TimeRange } from '../time/resolve';
@@ -12,7 +12,8 @@ export type TurnPlan = {
   mode: Mode;
   reverify: boolean;
   searchesTheWeb: boolean;
-  claimCount: number;
+  claims: MemoryClaim[];
+  verdictSince?: string;
   vendorChecks: VendorCheck[];
   plannedQueries: string[];
   prompt: PromptParts<never>;
@@ -52,19 +53,20 @@ export async function planTurn(turn: TurnInput, status: (text: string) => void):
   const plannedQueries = searchesTheWeb && !vendorChecks.length ? routed.queries : [];
   const searchedAlready = vendorChecks.length > 0 || plannedQueries.length > 0;
 
+  const since = reverify
+    ? verdictSince(
+        claimsIn(items).map((claim) => claim.checked_at),
+        rangesWhenAboutPast.map((range) => range.start),
+        zone,
+      )
+    : undefined;
   const prompt = fitPromptToBudget({
     instructions: buildInstructions({
       mode,
       now: at,
       tz: zone,
       searchedAlready,
-      verdictSince: reverify
-        ? verdictSince(
-            claimsIn(items).map((claim) => claim.checked_at),
-            rangesWhenAboutPast.map((range) => range.start),
-            zone,
-          )
-        : undefined,
+      verdictSince: since,
     }),
     profile: formatProfile(listUserFacts(at), zone),
     memory,
@@ -77,7 +79,8 @@ export async function planTurn(turn: TurnInput, status: (text: string) => void):
     mode,
     reverify,
     searchesTheWeb,
-    claimCount: claimsIn(items).length,
+    claims: claimsIn(items),
+    verdictSince: since,
     vendorChecks,
     plannedQueries,
     prompt,
