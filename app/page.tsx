@@ -77,10 +77,10 @@ function Message({ message, citing = false }: { message: UIMessage; citing?: boo
     return <div className="ml-auto w-fit max-w-[85%] whitespace-pre-wrap rounded-2xl bg-zinc-100 px-4 py-2 dark:bg-zinc-800">{text}</div>;
   }
   return (
-    <div className="md">
+    <div className="space-y-3">
       <div
         key={finalAnswer === undefined ? 'draft' : 'final'}
-        className={finalAnswer !== undefined ? 'fade-in' : citing ? 'opacity-50 transition-opacity duration-300' : ''}
+        className={`md ${finalAnswer !== undefined ? 'fade-in' : citing ? 'opacity-50 transition-opacity duration-300' : ''}`}
       >
       {verdict && (
         <p
