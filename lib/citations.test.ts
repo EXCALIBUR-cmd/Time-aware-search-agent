@@ -33,12 +33,28 @@ test('a re-verification answer is told to lead with a dated verdict and to carry
   expect(instructions).toContain('End with a "Sources" list of only the results you cited, each listed once');
 });
 
-test('the verdict is dated from the oldest claim compared, so it matches the table', () => {
+test('the verdict is dated from when the claims were checked, as a range when the dates differ', () => {
+  const tz = 'Asia/Kolkata';
   const askedAbout = [new Date('2026-11-10T00:00:00+05:30')];
-  const claims = ['2026-11-13T15:07:27.553Z', '2026-11-03T07:09:00.000Z', '2026-11-03T15:04:00.000Z'];
-  expect(verdictSince(claims, askedAbout, 'Asia/Kolkata')).toBe('Tue 3 Nov');
-  expect(verdictSince([], askedAbout, 'Asia/Kolkata')).toBe('Tue 10 Nov');
-  expect(verdictSince([], [], 'Asia/Kolkata')).toBeUndefined();
+  const sameDay = ['2026-11-03T07:09:00.000Z', '2026-11-03T15:04:00.000Z'];
+  expect(verdictSince(sameDay, askedAbout, tz)).toBe('these prices were checked on Tue 3 Nov');
+  expect(verdictSince([...sameDay, '2026-11-10T09:00:00.000Z'], askedAbout, tz)).toBe('these prices were checked on 3 to 10 Nov');
+  expect(verdictSince(['2026-10-28T09:00:00.000Z', '2026-11-03T09:00:00.000Z'], [], tz)).toBe(
+    'these prices were checked on 28 Oct to 3 Nov',
+  );
+  expect(verdictSince([], askedAbout, tz)).toBe('Tue 10 Nov');
+  expect(verdictSince([], [], tz)).toBeUndefined();
+});
+
+test('the verdict sentence reads naturally with a claim date', () => {
+  const instructions = buildInstructions({
+    mode: 'reverify',
+    now: new Date('2026-11-14T10:00:00+05:30'),
+    tz: 'Asia/Kolkata',
+    searchedAlready: true,
+    verdictSince: 'these prices were checked on Tue 3 Nov',
+  });
+  expect(instructions).toContain('"**Nothing has changed since these prices were checked on Tue 3 Nov.**"');
 });
 
 test('other modes get no verdict instruction', () => {

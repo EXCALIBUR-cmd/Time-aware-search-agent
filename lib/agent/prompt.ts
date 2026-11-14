@@ -1,11 +1,18 @@
 import { formatInTimeZone } from 'date-fns-tz';
 import type { Mode } from './router';
 
+function dayRange(earliest: string, latest: string, tz: string): string {
+  const day = (d: string, pattern: string) => formatInTimeZone(d, tz, pattern);
+  if (day(earliest, 'yyyy-MM-dd') === day(latest, 'yyyy-MM-dd')) return day(earliest, 'EEE d MMM');
+  const sameMonth = day(earliest, 'yyyy-MM') === day(latest, 'yyyy-MM');
+  return `${day(earliest, sameMonth ? 'd' : 'd MMM')} to ${day(latest, 'd MMM')}`;
+}
+
 export function verdictSince(claimsCheckedAt: string[], askedDays: Date[], tz: string): string | undefined {
-  const oldestClaim = [...claimsCheckedAt].sort()[0];
+  const checked = [...claimsCheckedAt].sort();
+  if (checked.length) return `these prices were checked on ${dayRange(checked[0], checked[checked.length - 1], tz)}`;
   const earliestAskedDay = [...askedDays].sort((a, b) => a.getTime() - b.getTime())[0];
-  const since = oldestClaim ?? earliestAskedDay;
-  return since ? formatInTimeZone(since, tz, 'EEE d MMM') : undefined;
+  return earliestAskedDay ? formatInTimeZone(earliestAskedDay, tz, 'EEE d MMM') : undefined;
 }
 
 export type InstructionInput ={ mode: Mode; now: Date; tz: string; searchedAlready: boolean; verdictSince?: string };
