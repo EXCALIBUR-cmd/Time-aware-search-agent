@@ -1,5 +1,5 @@
 import { formatMemory, formatProfile } from '../memory/format';
-import { recall, topicTerms, type MemoryClaim, type MemoryItem } from '../memory/recall';
+import { recall, recallTerms, type MemoryClaim, type MemoryItem } from '../memory/recall';
 import { listUserFacts } from '../memory/store';
 import { planVendorChecks, type VendorCheck } from '../search/reverify-search';
 import { refersToPast, resolveTime, type TimeRange } from '../time/resolve';
@@ -27,11 +27,14 @@ export async function planTurn(turn: TurnInput, status: (text: string) => void):
   const { conversationId, text, at, zone, history } = turn;
   const ranges = resolveTime(text, at, zone);
   const datedByRule = refersToPast(ranges, at);
-  const ownTerms = topicTerms(text);
   const previousQuestion = history.findLast((m) => m.role === 'user')?.content ?? '';
-  const terms = ownTerms.length ? ownTerms : topicTerms(previousQuestion);
   const recallWithin = (within: TimeRange[]) =>
-    recall({ ranges: within, topicTerms: terms, now: at, excludeConversationId: conversationId });
+    recall({
+      ranges: within,
+      topicTerms: recallTerms(text, previousQuestion, within.length > 0),
+      now: at,
+      excludeConversationId: conversationId,
+    });
   const firstLook = recallWithin(datedByRule ? ranges : []);
 
   const routed = await route(text, datedByRule, { previousQuestion, subjectsInMemory: subjectsIn(firstLook) });

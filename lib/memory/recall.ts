@@ -42,6 +42,18 @@ const officialFirst = (claims: MemoryClaim[]) =>
 export const topicTerms = (text: string): string[] =>
   [...new Set(text.toLowerCase().match(/[a-z0-9]+/g) ?? [])].filter((w) => w.length > 2 && !STOP.has(w));
 
+const NOT_A_TOPIC = new Set(
+  'pricing price prices priced cost costs plan plans tier tiers monday tuesday wednesday thursday friday saturday sunday january february march april may june july august september october november december jan feb mar apr jun jul aug sep sept oct nov dec yesterday week month year'.split(
+    ' ',
+  ),
+);
+
+export function recallTerms(text: string, previousQuestion: string, asksAboutADate: boolean): string[] {
+  if (asksAboutADate) return topicTerms(text).filter((term) => !NOT_A_TOPIC.has(term));
+  const own = topicTerms(text);
+  return own.length ? own : topicTerms(previousQuestion);
+}
+
 export function recall(q: {
   ranges: TimeRange[];
   topicTerms: string[];
