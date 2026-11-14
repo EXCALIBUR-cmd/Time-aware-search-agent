@@ -9,3 +9,7 @@ export function citedSources<Source extends { sourceId: string; url: string }>(t
     return true;
   });
 }
+
+const SOURCES_SECTION = /\n\s*\**sources\**:?\**[ \t]*(?=\[|\n|$)[\s\S]*$/i;
+
+export const withoutSourcesSection = (text: string): string => text.replace(SOURCES_SECTION, '').trimEnd();

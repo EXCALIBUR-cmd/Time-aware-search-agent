@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 import { buildInstructions, verdictSince } from './agent/prompt';
-import { citedNumbers, citedSources } from './citations';
+import { citedNumbers, citedSources, withoutSourcesSection } from './citations';
 
 const source = (sourceId: string, url: string) => ({ sourceId, url });
 
@@ -65,4 +65,13 @@ test('the verdict sentence reads naturally with a claim date', () => {
 test('other modes get no verdict instruction', () => {
   const fresh = buildInstructions({ mode: 'fresh', now: new Date(), tz: 'Asia/Kolkata', searchedAlready: true });
   expect(fresh).not.toContain('verdict');
+});
+
+test('the text Sources section is cut off in every format the agent writes, and nothing else is', () => {
+  const body = 'Neon Launch is $19/month [1].';
+  expect(withoutSourcesSection(`${body}\n\nSources: [1] https://neon.com/pricing (checked 3 Nov 2026)`)).toBe(body);
+  expect(withoutSourcesSection(`${body}\n\n**Sources** [1] [Neon pricing](https://neon.com/pricing)`)).toBe(body);
+  expect(withoutSourcesSection(`${body}\n\n**Sources:**\n- [1] [Neon pricing](https://neon.com/pricing)`)).toBe(body);
+  const mentionsSources = `${body}\nSources say Neon may change pricing soon.`;
+  expect(withoutSourcesSection(mentionsSources)).toBe(mentionsSources);
 });

@@ -5,7 +5,7 @@ import { DefaultChatTransport, type UIMessage } from 'ai';
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { citedSources } from '@/lib/citations';
+import { citedSources, withoutSourcesSection } from '@/lib/citations';
 
 type Conversation = { id: string; title: string; created_at: string; is_demo: 0 | 1 };
 type StoredSource = { sourceId: string; title: string; url: string; official: boolean };
@@ -79,7 +79,8 @@ function Message({ message, citing = false }: { message: UIMessage; citing?: boo
   const notice = message.parts.flatMap((p) => (p.type === 'data-notice' ? [String(p.data)] : []))[0];
   const isReverification = text.includes('| Changed? |');
   const verdict = isReverification ? VERDICT_LINE.exec(text)?.[1] : undefined;
-  const body = verdict ? text.replace(VERDICT_LINE, '') : text;
+  const withoutVerdict = verdict ? text.replace(VERDICT_LINE, '') : text;
+  const body = sources.length ? withoutSourcesSection(withoutVerdict) : withoutVerdict;
   const nothingChanged = verdict?.startsWith('Nothing has changed');
   if (message.role === 'user') {
     return <div className="ml-auto w-fit max-w-[85%] whitespace-pre-wrap rounded-2xl bg-zinc-100 px-4 py-2 dark:bg-zinc-800">{text}</div>;
@@ -295,7 +296,7 @@ export default function Page() {
                 <path d="M3.5 6h13M3.5 10h13M3.5 14h13" strokeLinecap="round" />
               </svg>
             </button>
-            <span className="text-sm font-semibold">Chat agent</span>
+            <span className="text-sm font-semibold">Time-Aware Search Agent</span>
           </div>
           {DEV && (
             <label title={CLOCK_HINT} className="flex items-center gap-2 text-sm text-zinc-600 dark:text-zinc-400">
