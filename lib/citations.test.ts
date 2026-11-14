@@ -28,7 +28,9 @@ test('a re-verification answer is told to lead with a dated verdict and to carry
     verdictSince: 'Tue 10 Nov',
   });
   expect(instructions).toContain('"**Nothing has changed since Tue 10 Nov.**"');
-  expect(instructions).toContain('"**Two prices changed since Tue 10 Nov.**"');
+  expect(instructions).toContain('with N replaced by exactly how many rows say "Yes"');
+  expect(instructions).toContain(`"Couldn't confirm" is not a change.`);
+  expect(instructions).not.toContain('Two prices changed');
   expect(instructions).toContain('No heading or title anywhere in the answer.');
   expect(instructions).toContain('End with a "Sources" list of only the results you cited, each listed once');
 });
