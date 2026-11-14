@@ -59,6 +59,8 @@ test('unit and currency variants compare as equal; real differences do not', () 
   expect(compareValues('$25 per month', '$29 per month')).toBe('yes');
   expect(compareValues('1 GB', '5 GB')).toBe('yes');
   expect(compareValues('None', '$5 per month')).toBe('yes');
+  expect(compareValues('None', 'Pay for what you use')).toBe('unknown');
+  expect(compareValues('Unlimited', 'unlimited')).toBe('no');
   expect(compareValues('$5 per month', '€5 per month')).toBe('unknown');
   expect(compareValues('$5 per month', null)).toBe('unknown');
   expect(containsValue('The Hobby Plan is $5 a month.', '$5/mo')).toBe(true);

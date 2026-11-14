@@ -39,7 +39,7 @@ export function compareValues(then: string, now: string | null): Changed {
   const before = measure(then);
   const after = measure(now);
   if ('text' in before || 'text' in after) {
-    if ('text' in before && 'text' in after) return before.text === after.text ? 'no' : 'yes';
+    if ('text' in before && 'text' in after) return before.text === after.text ? 'no' : 'unknown';
     return 'yes';
   }
   const currenciesDiffer = before.currency && after.currency && before.currency !== after.currency;
