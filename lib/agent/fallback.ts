@@ -88,3 +88,36 @@ export async function forwardAnswer(
     sink.write(value);
   }
 }
+
+export type AnswerAttempts = {
+  fromMainModel: () => AnswerStream;
+  fromMainModelWithoutTools: () => AnswerStream;
+  fromFastModelWithoutTools: () => AnswerStream;
+  usedItsFollowUpSearch: () => boolean;
+};
+
+const FALLING_BACK_STATUS = 'The main model is rate limited: answering with the smaller model…';
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+export async function answerWithFallback(
+  attempts: AnswerAttempts,
+  sink: ChunkSink,
+  status: (text: string) => void,
+): Promise<void> {
+  let outcome = await forwardAnswer(attempts.fromMainModel(), sink, { continuesOpenMessage: false, handsOver: true });
+  if (worthWaitingFor(outcome)) {
+    status(`The main model is busy: retrying in ${Math.ceil(outcome.retryAfterMs / 1000)} s…`);
+    await sleep(outcome.retryAfterMs);
+    const retry = attempts.usedItsFollowUpSearch() ? attempts.fromMainModelWithoutTools() : attempts.fromMainModel();
+    outcome = await forwardAnswer(retry, sink, { continuesOpenMessage: true, handsOver: true });
+  }
+  if (!outcome.reason) return;
+
+  const mainModelIsRateLimited = outcome.reason === 'rate-limited';
+  if (mainModelIsRateLimited) {
+    status(FALLING_BACK_STATUS);
+    sink.write({ type: 'data-notice', data: SMALLER_MODEL_NOTICE });
+  }
+  const lastAnswer = mainModelIsRateLimited ? attempts.fromFastModelWithoutTools() : attempts.fromMainModelWithoutTools();
+  await forwardAnswer(lastAnswer, sink, { continuesOpenMessage: true, handsOver: false });
+}

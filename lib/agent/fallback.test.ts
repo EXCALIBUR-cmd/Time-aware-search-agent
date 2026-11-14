@@ -2,6 +2,7 @@ import type { UIMessageChunk } from 'ai';
 import { expect, test } from 'vitest';
 import { BUSY_MESSAGE, isRateLimited } from './budget';
 import {
+  answerWithFallback,
   forwardAnswer,
   handOverReasonFor,
   noticeForAnswerBy,
@@ -123,4 +124,34 @@ test('the smaller-model note comes from the stored model, so it is the same afte
   expect(noticeForAnswerBy('small/model', 'main/model')).toBe(SMALLER_MODEL_NOTICE);
   expect(noticeForAnswerBy('main/model', 'main/model')).toBeNull();
   expect(noticeForAnswerBy(null, 'main/model')).toBeNull();
+});
+
+test('the retry and fallback flow: short wait retries the main model, long wait goes to the fast model', async () => {
+  const quickRetry = new Error('Rate limit reached. Please try again in 10ms.');
+  const longWait = new Error('Rate limit reached. Please try again in 30s.');
+  const run = async (firstFailure: Error, retryFails: boolean) => {
+    const used: string[] = [];
+    const statuses: string[] = [];
+    const { written, sink } = collect();
+    let mainCalls = 0;
+    await answerWithFallback(
+      {
+        fromMainModel: () => {
+          mainCalls++;
+          used.push('main');
+          const fails = mainCalls === 1 || retryFails;
+          return answerThat(fails ? [] : textChunks('main answer'), fails ? (mainCalls === 1 ? firstFailure : longWait) : undefined);
+        },
+        fromMainModelWithoutTools: () => (used.push('main without tools'), answerThat(textChunks('plain'))),
+        fromFastModelWithoutTools: () => (used.push('fast'), answerThat(textChunks('fast answer'))),
+        usedItsFollowUpSearch: () => false,
+      },
+      sink,
+      (s) => statuses.push(s),
+    );
+    return { used, statuses, notices: written.filter((c) => c.type === 'data-notice').length };
+  };
+  expect(await run(quickRetry, false)).toEqual({ used: ['main', 'main'], statuses: ['The main model is busy: retrying in 1 s…'], notices: 0 });
+  expect(await run(longWait, false)).toMatchObject({ used: ['main', 'fast'], notices: 1 });
+  expect(await run(quickRetry, true)).toMatchObject({ used: ['main', 'main', 'fast'], notices: 1 });
 });
