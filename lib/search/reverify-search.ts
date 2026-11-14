@@ -1,4 +1,5 @@
-import { classifySource, officialDomainFor, wordsOf } from './official';
+import { classifySource, officialDomainFor } from './official';
+import { distinctiveWords, passagePerClaim } from './passages';
 import type { SearchResult } from './tavily';
 import { bestPassage, mentionsPrice } from './web-search-tool';
 
@@ -13,10 +14,6 @@ const MAX_VENDORS = 4;
 const OFFICIAL_RESULTS_PER_VENDOR = 2;
 const THIRD_PARTY_SEARCHES_PER_TURN = 2;
 const THIRD_PARTY_RESULTS_PER_CLAIM = 2;
-const PRICING_PAGE_PASSAGE_CHARS = 1200;
-const GENERIC_ATTRIBUTE_WORDS = new Set([
-  'the', 'and', 'for', 'per', 'plan', 'plans', 'price', 'pricing', 'cost', 'costs', 'monthly', 'month', 'fee', 'tier', 'limit',
-]);
 
 export function planVendorChecks(claims: ClaimToCheck[]): VendorCheck[] {
   const byVendor = new Map<string, VendorCheck>();
@@ -34,7 +31,7 @@ export function planVendorChecks(claims: ClaimToCheck[]): VendorCheck[] {
 }
 
 export function isAnsweredBy(attribute: string, results: SearchResult[]): boolean {
-  const distinctive = wordsOf(attribute).filter((word) => word.length > 2 && !GENERIC_ATTRIBUTE_WORDS.has(word));
+  const distinctive = distinctiveWords(attribute);
   if (!distinctive.length) return results.some((result) => mentionsPrice(result.content));
   return results.some((result) => {
     const content = result.content.toLowerCase();
@@ -75,7 +72,11 @@ export async function findEvidence(checks: VendorCheck[], sources: EvidenceSourc
     .slice(0, THIRD_PARTY_SEARCHES_PER_TURN);
   const thirdParty = await Promise.all(unconfirmed.map(({ check, attribute }) => thirdPartyEvidence(check, attribute, sources)));
   const official = officialPerVendor.flatMap((results, i) =>
-    labelled(results, `${checks[i].vendor} ${checks[i].attributes.join(' ')}`, 'official', PRICING_PAGE_PASSAGE_CHARS),
+    results.map((result) => ({
+      ...result,
+      sourceType: 'official' as const,
+      content: passagePerClaim(result.content, checks[i].attributes, `${checks[i].vendor} ${checks[i].attributes.join(' ')}`),
+    })),
   );
   const seen = new Set<string>();
   return [...official, ...thirdParty.flat()].filter((result) => !seen.has(result.url) && seen.add(result.url));

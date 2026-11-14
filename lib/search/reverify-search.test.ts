@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest';
 import { classifySource, officialDomainFor } from './official';
+import { passagePerClaim } from './passages';
 import { findEvidence, isAnsweredBy, planVendorChecks, type EvidenceSources } from './reverify-search';
 import type { SearchResult } from './tavily';
 
@@ -164,4 +165,20 @@ test('third-party searches are capped at 2 per turn, across all vendors', async 
   );
   const thirdPartySearches = calls.filter((call) => call.startsWith('search') && !call.includes('@'));
   expect(thirdPartySearches).toEqual(['search Neon Launch compute', 'search Neon Scale compute']);
+});
+
+test('a long official page gives the model a passage for each claim, not one window around the most prices', () => {
+  const faq = 'Is the Hobby plan free? No. The Hobby plan is $5 a month with $5 of usage credit. '.repeat(8);
+  const table = [
+    '| Plan | **RAM** | **Ephemeral Storage** | **Volume Storage** |',
+    '| **Free** | **0.5 GB** | **1 GB** | **0.5 GB** |',
+    '| **Hobby** | **48 GB** | **100 GB** | **5 GB** |',
+  ].join('\n');
+  const page = `${'Intro text about deploying apps. '.repeat(40)}${table}\n${'Other docs. '.repeat(60)}${faq}`;
+  const passage = passagePerClaim(page, ['Hobby plan monthly cost', 'Hobby plan Postgres storage'], 'Railway');
+  expect(passage).toContain('| **Hobby** | **48 GB** | **100 GB** | **5 GB** |');
+  expect(passage).toContain('**Volume Storage**');
+  expect(passage).toContain('$5 a month');
+  expect(passage.length).toBeLessThanOrEqual(1810);
+  expect(passagePerClaim('A short page.', ['anything'], 'X')).toBe('A short page.');
 });
