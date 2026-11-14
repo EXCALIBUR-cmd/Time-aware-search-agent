@@ -1,5 +1,7 @@
 # minimi Chat Agent
 
+[![CI](https://github.com/EXCALIBUR-cmd/Time-aware-search-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/EXCALIBUR-cmd/Time-aware-search-agent/actions/workflows/ci.yml)
+
 A chat agent with one tool, web search, that remembers what it said and when, and can re-check its past answers against today's web. The design is argued in [DESIGN.md](DESIGN.md).
 
 ## Setup
