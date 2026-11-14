@@ -102,18 +102,28 @@ function Message({ message, citing = false }: { message: UIMessage; citing?: boo
       </div>
       {sources.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
-          {sources.map((s) => (
-            <a
-              key={s.sourceId}
-              href={s.url}
-              title={s.title}
-              target="_blank"
-              rel="noreferrer"
-              className="rounded-full border border-zinc-300 px-2 py-0.5 text-xs !no-underline hover:bg-zinc-100"
-            >
-              [{s.sourceId}] {host(s.url)}
-            </a>
-          ))}
+          {sources.map((s) => {
+            const official = s.providerMetadata?.agent?.sourceType === 'official';
+            return (
+              <a
+                key={s.sourceId}
+                href={s.url}
+                title={s.url}
+                target="_blank"
+                rel="noreferrer"
+                aria-label={`Source ${s.sourceId}: ${host(s.url)}${official ? ', official' : ''} (opens in a new tab)`}
+                className="inline-flex min-h-6 items-center gap-1.5 rounded-full border border-zinc-300 px-2.5 py-0.5 text-xs !no-underline hover:bg-zinc-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-500"
+              >
+                <span className="text-zinc-500">{s.sourceId}</span>
+                <span>{host(s.url)}</span>
+                {official && (
+                  <span className="rounded bg-emerald-50 px-1 text-[10px] font-medium uppercase tracking-wide text-emerald-800">
+                    official
+                  </span>
+                )}
+              </a>
+            );
+          })}
         </div>
       )}
       {notice && <p className="text-xs text-zinc-500">{notice}</p>}

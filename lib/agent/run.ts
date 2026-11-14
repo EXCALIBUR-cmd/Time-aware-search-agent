@@ -57,7 +57,13 @@ export function runAgent({
         onStatus: status,
         onResult: (r) => {
           sources.push(r);
-          writer.write({ type: 'source-url', sourceId: String(r.n), url: r.url, title: r.title });
+          writer.write({
+            type: 'source-url',
+            sourceId: String(r.n),
+            url: r.url,
+            title: r.title,
+            ...(r.sourceType ? { providerMetadata: { agent: { sourceType: r.sourceType } } } : {}),
+          });
         },
       });
       const checkOfficialPagesFirst = async () => {
