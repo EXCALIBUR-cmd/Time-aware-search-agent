@@ -1,7 +1,7 @@
 import type { TimeRange } from '../time/resolve';
 import { classifySource } from '../search/official';
 import type { SourceType } from '../search/tavily';
-import { keepOnlyNewestClaims } from './claims';
+import { keepOneClaimPerGroup } from './claims';
 import { getDb } from './db';
 import type { Role } from './store';
 
@@ -90,5 +90,6 @@ export function recall(q: {
       if (add(h.ref_id, 'topic')) topical++;
     }
   }
-  return keepOnlyNewestClaims(items);
+  const askedUpTo = q.ranges.map((range) => range.end.toISOString()).sort().at(-1);
+  return keepOneClaimPerGroup(items, askedUpTo);
 }

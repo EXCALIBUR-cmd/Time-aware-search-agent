@@ -3,10 +3,12 @@ import { rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeEach, expect, test } from 'vitest';
+import { verdictSince } from '../agent/prompt';
+import { checkRows, claimsToCompare, renderTable, renderVerdict } from '../agent/reverify';
 import { resolveTime } from '../time/resolve';
 import { getDb, openDb } from './db';
 import { formatMemory } from './format';
-import { recall } from './recall';
+import { recall, topicTerms } from './recall';
 import { getMessages, listConversations, listUserFacts, saveClaims, saveMessage, saveUserFacts } from './store';
 
 const tz = 'Asia/Kolkata';
@@ -155,4 +157,36 @@ test('duplicate claims saved under different names are read as one, with the new
     ['Supabase', 'Pro plan database storage', '8 GB'],
   ]);
   expect(getDb().prepare('SELECT count(*) AS n FROM claims').get()).toEqual({ n: 4 });
+});
+
+test('asked on 14 Nov "has it changed since 3 Nov?", the baseline is the value as it was on 3 Nov', () => {
+  const nov3 = saveMessage({ conversationId: 'c3', role: 'assistant', content: 'Neon Launch is $19/month.', at: at(3, '09:01') });
+  saveClaims(nov3, [{ subject: 'Neon', attribute: 'Launch plan price', value: '$19/month', sourceUrl: 'https://neon.com/pricing' }], at(3, '09:01'));
+  const nov13 = saveMessage({ conversationId: 'c13', role: 'assistant', content: 'Neon Launch is now $25/month.', at: at(13) });
+  saveClaims(nov13, [{ subject: 'Neon', attribute: 'Launch plan price', value: '$25/month', sourceUrl: 'https://neon.com/pricing' }], at(13));
+
+  const asked = at(14);
+  const text = 'Has the Neon Launch price changed since 3 Nov?';
+  const ranges = resolveTime(text, asked, tz);
+  const claims = recall({ ranges, topicTerms: topicTerms(text), now: asked }).flatMap((m) => m.claims);
+  expect(claims.map((c) => [c.value, c.checked_at.slice(0, 10)])).toEqual([['$19/month', '2026-11-03']]);
+
+  const rows = claimsToCompare(claims);
+  const neonPricing = { n: 1, title: 'Neon pricing', url: 'https://neon.com/pricing', sourceType: 'official' as const, content: 'Launch | Price: $25/month' };
+  const since = verdictSince(claims.map((c) => c.checked_at), ranges.map((r) => r.start), tz) ?? '';
+  const answer = (now: string) =>
+    checkRows(rows, [{ claim_id: 'c1', now_value: now, quote: `Launch | Price: ${now}`, source_url: neonPricing.url }], [
+      { ...neonPricing, content: `Launch | Price: ${now}` },
+    ]);
+
+  const changed = answer('$25/month');
+  expect(renderTable(changed, tz)).toContain('| Neon · Launch plan price | $19/month (3 Nov) | $25/month | Yes | [1] |');
+  expect(renderVerdict(changed, since)).toBe('**One price changed since these prices were checked on Tue 3 Nov.**');
+
+  const unchanged = answer('$19/month');
+  expect(unchanged[0].changed).toBe('no');
+  expect(renderVerdict(unchanged, since)).toBe('**Nothing has changed since these prices were checked on Tue 3 Nov.**');
+
+  const withoutDate = recall({ ranges: [], topicTerms: topicTerms(text), now: asked }).flatMap((m) => m.claims);
+  expect(withoutDate.map((c) => c.value)).toEqual(['$25/month']);
 });

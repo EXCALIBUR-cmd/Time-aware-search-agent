@@ -18,7 +18,15 @@ export const sameClaimKey = (claim: Pick<MemoryClaim, 'subject' | 'attribute'>) 
     .sort()
     .join(' ');
 
-function newestUnderShortestName(claims: MemoryClaim[]): Map<string, MemoryClaim> {
+function isBetterBaseline(candidate: MemoryClaim, current: MemoryClaim, asOf?: string): boolean {
+  if (!asOf) return candidate.checked_at > current.checked_at;
+  const candidateKnownThen = candidate.checked_at <= asOf;
+  const currentKnownThen = current.checked_at <= asOf;
+  if (candidateKnownThen !== currentKnownThen) return candidateKnownThen;
+  return candidateKnownThen ? candidate.checked_at > current.checked_at : candidate.checked_at < current.checked_at;
+}
+
+function baselinePerClaim(claims: MemoryClaim[], asOf?: string): Map<string, MemoryClaim> {
   const merged = new Map<string, MemoryClaim>();
   for (const claim of claims) {
     const key = sameClaimKey(claim);
@@ -27,25 +35,28 @@ function newestUnderShortestName(claims: MemoryClaim[]): Map<string, MemoryClaim
       merged.set(key, claim);
       continue;
     }
-    const newest = claim.checked_at > seen.checked_at ? claim : seen;
+    const baseline = isBetterBaseline(claim, seen, asOf) ? claim : seen;
     const shortestName = claim.subject.length < seen.subject.length ? claim : seen;
-    merged.set(key, { ...newest, subject: shortestName.subject, attribute: shortestName.attribute });
+    merged.set(key, { ...baseline, subject: shortestName.subject, attribute: shortestName.attribute });
   }
   return merged;
 }
 
-export const mergeSameClaims = (claims: MemoryClaim[]): MemoryClaim[] => [...newestUnderShortestName(claims).values()];
+export const mergeSameClaims = (claims: MemoryClaim[]): MemoryClaim[] => [...baselinePerClaim(claims).values()];
 
-export function keepOnlyNewestClaims(items: MemoryItem[]): MemoryItem[] {
-  const winners = newestUnderShortestName(items.flatMap((item) => item.claims));
+export function keepOneClaimPerGroup(items: MemoryItem[], asOf?: string): MemoryItem[] {
+  const winners = baselinePerClaim(
+    items.flatMap((item) => item.claims),
+    asOf,
+  );
   const placed = new Set<string>();
   return items.map((item) => ({
     ...item,
     claims: item.claims.flatMap((claim) => {
       const key = sameClaimKey(claim);
       const winner = winners.get(key);
-      const isTheNewest = winner && claim.checked_at === winner.checked_at && claim.value === winner.value;
-      if (!winner || !isTheNewest || placed.has(key)) return [];
+      const isTheWinner = winner && claim.checked_at === winner.checked_at && claim.value === winner.value;
+      if (!winner || !isTheWinner || placed.has(key)) return [];
       placed.add(key);
       return [winner];
     }),
