@@ -15,7 +15,7 @@ const WHEN_NOT_SEARCHED_YET: Record<Mode, string> = {
 const WHEN_ALREADY_SEARCHED: Partial<Record<Mode, string>> = {
   fresh:
     'This turn: the web has already been searched for you and the results are in <search_results>, numbered [n]. Answer from them, citing each fact as [n] and ending with the Sources list. Call web_search once more only if they do not answer the question.',
-  reverify: `This turn: re-verify the claims in <memory> against <search_results>, fetched for you just now and numbered [n]. ${REVERIFY_ANSWER} Cite each "Now" value as [n] and end with the Sources list. Call web_search once more only for a subject the results do not cover.`,
+  reverify: `This turn: re-verify the claims in <memory> against <search_results>, fetched for you just now and numbered [n]. ${REVERIFY_ANSWER} Cite each "Now" value as [n] and end with the Sources list. Each result is marked (official) or (third-party source): take every "Now" value from an official result, and use a third-party result only when no official result answers that row, writing "(third-party source)" after its citation in the Source cell. Call web_search once more only for a subject the results do not cover.`,
 };
 
 export function buildInstructions(p: { mode: Mode; now: Date; tz: string; searchedAlready: boolean }): string {

@@ -1,8 +1,10 @@
 import { randomUUID } from 'node:crypto';
+import { classifySource } from '../search/official';
+import type { SourceType } from '../search/tavily';
 import { getDb } from './db';
 
 export type Role = 'user' | 'assistant';
-export type Claim = { subject: string; attribute: string; value: string; sourceUrl?: string | null };
+export type Claim = { subject: string; attribute: string; value: string; sourceUrl?: string | null; sourceType?: SourceType };
 export type StoredMessage = { id: string; role: Role; content: string; created_at: string; model: string | null };
 export type Conversation = { id: string; title: string; created_at: string; is_demo: 0 | 1 };
 
@@ -47,11 +49,12 @@ export function saveClaims(messageId: string, claims: Claim[], at: Date): void {
   const db = getDb();
   const checked = at.toISOString();
   const insert = db.prepare(
-    'INSERT INTO claims (id, message_id, subject, attribute, value, source_url, checked_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    'INSERT INTO claims (id, message_id, subject, attribute, value, source_url, checked_at, source_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
   );
   db.transaction(() => {
     for (const c of claims) {
-      insert.run(randomUUID(), messageId, c.subject, c.attribute, c.value, c.sourceUrl ?? null, checked);
+      const sourceType = c.sourceType ?? (c.sourceUrl ? classifySource(c.sourceUrl, c.subject) : null);
+      insert.run(randomUUID(), messageId, c.subject, c.attribute, c.value, c.sourceUrl ?? null, checked, sourceType);
       index(`${c.subject} ${c.attribute} ${c.value}`, 'claim', messageId, checked);
     }
   })();

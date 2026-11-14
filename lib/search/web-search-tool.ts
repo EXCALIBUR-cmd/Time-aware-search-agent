@@ -3,7 +3,8 @@ import { z } from 'zod';
 import { estimateTokens, takeWithinTokens } from '../agent/budget';
 import { now } from '../config';
 import { getDb } from '../memory/db';
-import { RESULTS_PER_QUERY, tavilySearch, type Depth, type SearchResult } from './tavily';
+import { isVendorDomainFor, wordsOf } from './official';
+import { RESULTS_PER_QUERY, tavilyExtract, tavilySearch, type Depth, type SearchResult } from './tavily';
 
 export type NumberedResult = SearchResult & { n: number };
 export type QueryResults = { query: string; results: SearchResult[] };
@@ -15,31 +16,15 @@ const PASSAGE_CHARS = 600;
 const PASSAGE_LEAD_IN_CHARS = 80;
 const PRICE_HIT_WEIGHT = 2;
 const QUERY_TERM_HIT_WEIGHT = 1;
-const MIN_VENDOR_LABEL_CHARS = 4;
 const FAST_MOVING_TOPIC = /pric|latest|today|news/i;
 const PRICE_LIKE =
   /[$€£₹]\s?\d|\/\s?(month|mo|user|seat|year|yr)\b|\bper (month|user|seat|year)\b|\b(free|hobby|starter|launch|basic|pro|team|growth|scale|business|premium|enterprise) (plan|tier)\b/gi;
-const GENERIC_HOST_LABELS = new Set(['www', 'docs', 'blog', 'help', 'support', 'news', 'pricing', 'community', 'forum']);
 const SEARCH_BUDGET_USED_UP = 'The search budget for this turn is used up: answer from the results you already have.';
+const SOURCE_LABEL = { official: '(official)', third_party: '(third-party source)' } as const;
 
 const cacheLifetime = (query: string) => (FAST_MOVING_TOPIC.test(query) ? HOUR / 2 : 6 * HOUR);
-const wordsOf = (query: string) => query.toLowerCase().match(/[a-z0-9]+/g) ?? [];
 
-function hostLabels(url: string): string[] {
-  try {
-    return new URL(url).hostname.toLowerCase().split('.').slice(0, -1);
-  } catch {
-    return [];
-  }
-}
-
-export function isVendorDomainFor(url: string, query: string): boolean {
-  const queryWithoutSeparators = wordsOf(query).join('');
-  return hostLabels(url).some(
-    (label) =>
-      label.length >= MIN_VENDOR_LABEL_CHARS && !GENERIC_HOST_LABELS.has(label) && queryWithoutSeparators.includes(label),
-  );
-}
+export const mentionsPrice = (text: string) => new RegExp(PRICE_LIKE.source, 'i').test(text);
 
 export function bestPassage(content: string, query: string, maxChars = PASSAGE_CHARS): string {
   if (content.length <= maxChars) return content;
@@ -82,9 +67,15 @@ export function pickResults(batches: QueryResults[], alreadyShown: ReadonlySet<s
   return picked;
 }
 
-async function cachedSearch(query: string, depth: Depth, recencyDays: number | undefined, bypassCache: boolean) {
+async function cachedSearch(
+  query: string,
+  depth: Depth,
+  recencyDays: number | undefined,
+  bypassCache: boolean,
+  includeDomains: string[] = [],
+) {
   const db = getDb();
-  const key = `${query.trim().toLowerCase().replace(/\s+/g, ' ')}|${depth}|${recencyDays ?? ''}`;
+  const key = `${query.trim().toLowerCase().replace(/\s+/g, ' ')}|${depth}|${recencyDays ?? ''}|${includeDomains.join(',')}`;
   const hit = db.prepare('SELECT results_json, fetched_at FROM search_cache WHERE query_key = ?').get(key) as
     | { results_json: string; fetched_at: string }
     | undefined;
@@ -92,7 +83,7 @@ async function cachedSearch(query: string, depth: Depth, recencyDays: number | u
   if (hit && !bypassCache && ageByRealClock < cacheLifetime(query)) {
     return JSON.parse(hit.results_json) as SearchResult[];
   }
-  const results = await tavilySearch(query, depth, recencyDays);
+  const results = await tavilySearch(query, depth, recencyDays, includeDomains);
   db.prepare('INSERT OR REPLACE INTO search_cache (query_key, results_json, fetched_at) VALUES (?, ?, ?)').run(
     key,
     JSON.stringify(results),
@@ -101,8 +92,16 @@ async function cachedSearch(query: string, depth: Depth, recencyDays: number | u
   return results;
 }
 
+export const liveEvidenceSources = (bypassCache: boolean) => ({
+  search: (query: string, includeDomains?: string[]) => cachedSearch(query, 'basic', undefined, bypassCache, includeDomains),
+  extract: tavilyExtract,
+});
+
 export function formatSearchResults(outcome: SearchOutcome): string {
-  const results = outcome.results.map((r) => `[${r.n}] ${r.title}\n${r.url}\n${r.content}`);
+  const results = outcome.results.map((r) => {
+    const label = r.sourceType ? `${SOURCE_LABEL[r.sourceType]} ` : '';
+    return `[${r.n}] ${label}${r.title}\n${r.url}\n${r.content}`;
+  });
   const errors = outcome.errors.map((error) => `Search problem: ${error}`);
   const body = results.length ? results.join('\n\n') : 'No results.';
   return [`<search_results searched_at="${outcome.searched_at}">`, body, ...errors, '</search_results>'].join('\n');
@@ -118,6 +117,19 @@ export function createSearchSession(opts: {
   let tokensLeftThisTurn = opts.tokenBudgetForTurn;
   const shownUrls = new Set<string>();
 
+  function present(bestFirst: SearchResult[], errors: string[] = []): SearchOutcome {
+    const notShownYet = bestFirst.filter((result) => !shownUrls.has(result.url));
+    const withinBudget = takeWithinTokens(notShownYet, tokensLeftThisTurn);
+    const results = withinBudget.map((result) => ({ ...result, n: ++citationNumberWithinTurn }));
+    tokensLeftThisTurn -= estimateTokens(JSON.stringify(results));
+    const budgetUsedUp = results.length < notShownYet.length;
+    for (const result of results) {
+      shownUrls.add(result.url);
+      opts.onResult(result);
+    }
+    return { results, errors: budgetUsedUp ? [...errors, SEARCH_BUDGET_USED_UP] : errors, searched_at: now().toISOString() };
+  }
+
   async function search(queries: string[], depth: Depth = 'basic', recencyDays?: number): Promise<SearchOutcome> {
     opts.onStatus(`Searching: ${queries.join(', ')}…`);
     const errors: string[] = [];
@@ -128,16 +140,7 @@ export function createSearchSession(opts: {
           errors.push(`${query}: ${e instanceof Error ? e.message : String(e)}`);
           return { query, results: [] };
         });
-    const picked = pickResults(await Promise.all(queries.map(searchOrRecordFailure)), shownUrls);
-    const withinBudget = takeWithinTokens(picked, tokensLeftThisTurn);
-    const results = withinBudget.map((result) => ({ ...result, n: ++citationNumberWithinTurn }));
-    tokensLeftThisTurn -= estimateTokens(JSON.stringify(results));
-    if (results.length < picked.length) errors.push(SEARCH_BUDGET_USED_UP);
-    for (const result of results) {
-      shownUrls.add(result.url);
-      opts.onResult(result);
-    }
-    return { results, errors, searched_at: now().toISOString() };
+    return present(pickResults(await Promise.all(queries.map(searchOrRecordFailure)), shownUrls), errors);
   }
 
   const followUpTool = tool({
@@ -151,5 +154,5 @@ export function createSearchSession(opts: {
     execute: ({ queries, recency_days, depth }) => search(queries, depth ?? 'basic', recency_days ?? undefined),
   });
 
-  return { search, followUpTool };
+  return { search, present, followUpTool };
 }

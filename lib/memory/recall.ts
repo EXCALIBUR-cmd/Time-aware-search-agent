@@ -1,4 +1,6 @@
 import type { TimeRange } from '../time/resolve';
+import { classifySource } from '../search/official';
+import type { SourceType } from '../search/tavily';
 import { getDb } from './db';
 import type { Role } from './store';
 
@@ -8,6 +10,7 @@ export type MemoryClaim = {
   value: string;
   source_url: string | null;
   checked_at: string;
+  source_type: SourceType | null;
 };
 export type MemoryItem = {
   id: string;
@@ -27,6 +30,14 @@ const STOP = new Set(
   ),
 );
 
+const withSourceType = (claim: MemoryClaim): MemoryClaim => ({
+  ...claim,
+  source_type: claim.source_type ?? (claim.source_url ? classifySource(claim.source_url, claim.subject) : null),
+});
+
+const officialFirst = (claims: MemoryClaim[]) =>
+  claims.map(withSourceType).sort((a, b) => Number(b.source_type === 'official') - Number(a.source_type === 'official'));
+
 export const topicTerms = (text: string): string[] =>
   [...new Set(text.toLowerCase().match(/[a-z0-9]+/g) ?? [])].filter((w) => w.length > 2 && !STOP.has(w));
 
@@ -44,7 +55,7 @@ export function recall(q: {
      WHERE m.id = ? AND m.conversation_id != ? AND m.created_at <= ?`,
   );
   const claims = db.prepare(
-    'SELECT subject, attribute, value, source_url, checked_at FROM claims WHERE message_id = ? AND checked_at <= ?',
+    'SELECT subject, attribute, value, source_url, checked_at, source_type FROM claims WHERE message_id = ? AND checked_at <= ?',
   );
   const items: MemoryItem[] = [];
   const seen = new Set<string>();
@@ -53,7 +64,7 @@ export function recall(q: {
     const m = load.get(id, q.excludeConversationId ?? '', now) as Omit<MemoryItem, 'match' | 'claims'> | undefined;
     if (!m) return false;
     seen.add(id);
-    items.push({ ...m, match, claims: claims.all(id, now) as MemoryClaim[] });
+    items.push({ ...m, match, claims: officialFirst(claims.all(id, now) as MemoryClaim[]) });
     return true;
   };
 

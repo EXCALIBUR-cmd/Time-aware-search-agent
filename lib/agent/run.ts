@@ -5,7 +5,13 @@ import { extractClaims, extractUserFacts, mentionsSelf } from '../memory/extract
 import { formatMemory, formatProfile } from '../memory/format';
 import { recall, topicTerms, type MemoryItem } from '../memory/recall';
 import { getMessages, listUserFacts, saveClaims, saveMessage, saveUserFacts } from '../memory/store';
-import { createSearchSession, formatSearchResults, type NumberedResult } from '../search/web-search-tool';
+import { findEvidence, planVendorChecks } from '../search/reverify-search';
+import {
+  createSearchSession,
+  formatSearchResults,
+  liveEvidenceSources,
+  type NumberedResult,
+} from '../search/web-search-tool';
 import { refersToPast, resolveTime, type TimeRange } from '../time/resolve';
 import {
   CHAT_TEMPLATE_TOKENS_PER_REQUEST,
@@ -23,7 +29,6 @@ import { buildInstructions } from './prompt';
 import { route } from './router';
 
 const FOLLOW_UP_SEARCHES = 1;
-const MAX_QUERIES_PER_SEARCH = 4;
 const HISTORY_TURNS = 12;
 const RETRIES_BY_THE_SDK = 0;
 const NO_TOOLS: ToolSet = {};
@@ -40,14 +45,6 @@ const joinSections = (sections: string[]) => sections.filter(Boolean).join('\n\n
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const claimsIn = (items: MemoryItem[]) => items.flatMap((item) => item.claims);
 const subjectsIn = (items: MemoryItem[]) => [...new Set(claimsIn(items).map((claim) => claim.subject))];
-
-function oneQueryPerClaimSubject(items: MemoryItem[]): string[] {
-  const queryBySubject = new Map<string, string>();
-  for (const claim of claimsIn(items)) {
-    if (!queryBySubject.has(claim.subject)) queryBySubject.set(claim.subject, `${claim.subject} ${claim.attribute}`);
-  }
-  return [...queryBySubject.values()].slice(0, MAX_QUERIES_PER_SEARCH);
-}
 
 export function runAgent({
   conversationId,
@@ -97,9 +94,9 @@ export function runAgent({
       const reverify = mode === 'reverify';
       const searchesTheWeb = mode === 'fresh' || reverify;
 
-      const queriesFromClaims = reverify ? oneQueryPerClaimSubject(items) : [];
-      const plannedQueries = !searchesTheWeb ? [] : routed.queries.length ? routed.queries : queriesFromClaims;
-      const searchedAlready = plannedQueries.length > 0;
+      const vendorChecks = reverify ? planVendorChecks(claimsIn(items)) : [];
+      const plannedQueries = searchesTheWeb && !vendorChecks.length ? routed.queries : [];
+      const searchedAlready = vendorChecks.length > 0 || plannedQueries.length > 0;
 
       const prompt = fitPromptToBudget({
         instructions: buildInstructions({ mode, now: at, tz: zone, searchedAlready }),
@@ -122,7 +119,15 @@ export function runAgent({
           writer.write({ type: 'source-url', sourceId: String(r.n), url: r.url, title: r.title });
         },
       });
-      const searched = searchedAlready ? await session.search(plannedQueries) : undefined;
+      const checkOfficialPagesFirst = async () => {
+        status(`Checking official pages: ${vendorChecks.map((check) => check.domain ?? check.vendor).join(', ')}…`);
+        return session.present(await findEvidence(vendorChecks, liveEvidenceSources(true)));
+      };
+      const searched = vendorChecks.length
+        ? await checkOfficialPagesFirst()
+        : plannedQueries.length
+          ? await session.search(plannedQueries)
+          : undefined;
       if (searched && reverify) status(`Comparing ${claimsIn(items).length} claims…`);
 
       const answerWith = (answer: {

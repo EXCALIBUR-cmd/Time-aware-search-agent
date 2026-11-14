@@ -50,7 +50,7 @@ test('recalls a day with its claims, each carrying a date', () => {
   expect(items[1].claims[0].value).toBe('$19/month');
   const block = formatMemory(items, ranges, tz);
   expect(block).toContain('[Tue 3 Nov 2026, 15:30 · "Compare Postgres hosting prices"] user:');
-  expect(block).toContain('claim: Neon · Launch plan price = $19/month (source: https://neon.com/pricing, checked 3 Nov 2026)');
+  expect(block).toContain('claim: Neon · Launch plan price = $19/month (source: https://neon.com/pricing, official, checked 3 Nov 2026)');
 });
 
 test('returns every message inside a date range, even when no keyword matches', () => {

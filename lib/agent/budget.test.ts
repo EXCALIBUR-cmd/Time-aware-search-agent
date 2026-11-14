@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest';
-import { bestPassage, isVendorDomainFor, pickResults } from '../search/web-search-tool';
+import { isVendorDomainFor } from '../search/official';
+import { bestPassage, pickResults } from '../search/web-search-tool';
 import type { SearchResult } from '../search/tavily';
 import {
   BUSY_MESSAGE,

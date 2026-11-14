@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeEach, expect, test } from 'vitest';
 import { resolveTime } from '../time/resolve';
-import { openDb } from './db';
+import { getDb, openDb } from './db';
 import { formatMemory } from './format';
 import { recall } from './recall';
 import { getMessages, listConversations, listUserFacts, saveClaims, saveMessage, saveUserFacts } from './store';
@@ -62,6 +62,33 @@ test('a claim checked after now is not linked yet', () => {
   const values = (now: Date) => recall({ ranges: [], topicTerms: ['neon'], now }).flatMap((m) => m.claims.map((c) => c.value));
   expect(values(at(3))).toEqual(['$19/month']);
   expect(values(at(12))).toEqual(['$19/month', '$25/month']);
+});
+
+test('a claim stores whether its source is official, and recall lists official sources first', () => {
+  const answer = saveMessage({ conversationId: 'c3', role: 'assistant', content: 'Neon and Railway prices', at: at(3, '09:01') });
+  saveClaims(
+    answer,
+    [
+      { subject: 'Railway', attribute: 'Hobby plan', value: '$5/month', sourceUrl: 'https://getdeploying.com/railway' },
+      { subject: 'Neon', attribute: 'Launch plan', value: '$19/month', sourceUrl: 'https://neon.com/pricing' },
+      { subject: 'Neon', attribute: 'Scale plan', value: '$69/month' },
+    ],
+    at(3, '09:01'),
+  );
+  const claims = recall({ ranges: [], topicTerms: ['railway'], now: at(12) }).flatMap((m) => m.claims);
+  expect(claims.map((c) => [c.subject, c.source_type])).toEqual([
+    ['Neon', 'official'],
+    ['Railway', 'third_party'],
+    ['Neon', null],
+  ]);
+});
+
+test('claims saved before source types existed are classified when read', () => {
+  const answer = saveMessage({ conversationId: 'c3', role: 'assistant', content: 'Supabase price', at: at(3, '09:02') });
+  saveClaims(answer, [{ subject: 'Supabase', attribute: 'Pro plan', value: '$25/month', sourceUrl: 'https://supabase.com/pricing' }], at(3, '09:02'));
+  getDb().prepare('UPDATE claims SET source_type = NULL').run();
+  const claims = recall({ ranges: [], topicTerms: ['supabase'], now: at(12) }).flatMap((m) => m.claims);
+  expect(claims.map((c) => c.source_type)).toEqual(['official']);
 });
 
 test('the sidebar still lists every conversation, whatever the clock says', () => {
