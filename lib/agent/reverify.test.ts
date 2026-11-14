@@ -225,3 +225,46 @@ test('when official sources agree, the pricing or docs page is the one cited, no
   expect(row).toMatchObject({ changed: 'no', now: '$0.106/CU-hour' });
   expect(row.source?.url).toBe(neonDocs.url);
 });
+
+test('Neon $19/month Launch against a usage-based pricing page is reported as no longer offered, and counts as a change', () => {
+  const neonRows = claimsToCompare([claim('Neon', 'Launch plan price', '$19/month')]);
+  const usageQuote = 'Pay for what you use. Launch compute is $0.106 per CU-hour, with no monthly minimum.';
+  const neonPricing: NumberedResult = {
+    n: 2,
+    title: 'Neon pricing',
+    url: 'https://neon.com/pricing',
+    sourceType: 'official',
+    content: `Plans\n${usageQuote}\nStorage is billed per GB-month.`,
+  };
+  const planChanged = (quote: string, page: NumberedResult = neonPricing) =>
+    checkRows(neonRows, [{ claim_id: 'c1', status: 'plan_changed', now_value: null, quote, source_url: page.url }], [page])[0];
+
+  const row = planChanged(usageQuote);
+  expect(row).toMatchObject({ now: null, changed: 'yes', source: neonPricing });
+  expect(renderTable([row], tz)).toContain(
+    '| Neon · Launch plan price | $19/month (3 Nov) | No longer offered: “Pay for what you use. Launch compute is $0.106 per CU-hour, with no monthly…” | Yes | [2] |',
+  );
+  expect(renderVerdict([row], since)).toBe(`**One price changed since ${since}.**`);
+
+  expect(planChanged('Pay for what you use. Launch is now $0.05 per CU-hour.')).toMatchObject({ changed: 'unknown' });
+  expect(planChanged(usageQuote, { ...neonPricing, sourceType: 'third_party' })).toMatchObject({ changed: 'unknown' });
+  const stillListed = { ...neonPricing, content: 'Launch: $19/month. Pay for what you use beyond the included hours.' };
+  expect(planChanged('Launch: $19/month. Pay for what you use beyond the included hours.', stillListed)).toMatchObject({ changed: 'unknown' });
+  const foundWins = checkRows(
+    neonRows,
+    [
+      { claim_id: 'c1', status: 'plan_changed', now_value: null, quote: usageQuote, source_url: neonPricing.url },
+      { claim_id: 'c1', status: 'found', now_value: '$19/month', quote: 'Launch $19/month', source_url: 'https://neon.com/docs/plans' },
+    ],
+    [neonPricing, { ...neonPricing, n: 3, url: 'https://neon.com/docs/plans', content: 'Launch $19/month' }],
+  )[0];
+  expect(foundWins).toMatchObject({ now: '$19/month', changed: 'no' });
+});
+
+test('a long plan-change quote is shortened at a word for the Now cell', () => {
+  const neonRows = claimsToCompare([claim('Neon', 'Launch plan price', '$19/month')]);
+  const longQuote = 'Pay for what you use: compute, storage, branches and data transfer are all billed by usage, so small projects cost cents and large ones scale smoothly.';
+  const page: NumberedResult = { n: 1, title: 'Neon', url: 'https://neon.com/pricing', sourceType: 'official', content: longQuote };
+  const [row] = checkRows(neonRows, [{ claim_id: 'c1', status: 'plan_changed', now_value: null, quote: longQuote, source_url: page.url }], [page]);
+  expect(row.noLongerOffered).toBe('Pay for what you use: compute, storage, branches and data transfer are all…');
+});

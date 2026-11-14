@@ -24,6 +24,7 @@ user message
 Every question in the brief is about time: memory is the product, search table stakes.
 
 - **Dated memory with claims.** Answers are kept as text and claim rows (subject, attribute, value, source, date checked). Re-verification compares them with fresh results (was / now / changed), adding rows, never overwriting.
+- **Plan changes are changes.** When an official page shows a plan or fixed price is gone (now usage-based, say), extraction returns `plan_changed` with a quote that code checks like any value; the row reads "No longer offered" and counts as changed. It is not saved as a new claim: there is no value to compare next time.
 - **Date maths in code.** Every `<memory>` item carries its date; an empty range is stated, which stops invented memories. A date without a year is its most recent occurrence.
 - **Date and topic must both match.** "Last Tuesday … Postgres" recalls only conversations inside the range that mention the topic there; a whole conversation counts, since answers often drop the user's word. If none match, memory names the nearest on-topic date and the turn does not re-verify it.
 - **Rules outrank the router.** A past date or "do you remember" forces memory; reverify needs the message to ask what changed. Labelled routing: 15/18 → 18/18.

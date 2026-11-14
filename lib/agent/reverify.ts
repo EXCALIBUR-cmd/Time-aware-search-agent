@@ -14,6 +14,7 @@ export type CheckedRow = ClaimRow & {
   source?: NumberedResult;
   quote?: string;
   conflict?: [Verified, Verified];
+  noLongerOffered?: string;
 };
 
 const MAX_ROWS = 12;
@@ -23,6 +24,7 @@ const Extraction = z.object({
   values: z.array(
     z.object({
       claim_id: z.string(),
+      status: z.enum(['found', 'plan_changed', 'not_found']).nullish(),
       now_value: z.coerce.string().nullable(),
       quote: z.string().nullish(),
       source_url: z.string().nullish(),
@@ -32,7 +34,9 @@ const Extraction = z.object({
 export type ExtractedValue = z.infer<typeof Extraction>['values'][number];
 
 export const EXTRACTION_SYSTEM = `You check stored claims against fetched sources. For every claim, find its current value in the sources.
-Reply with JSON only: {"values":[{"claim_id":"c1","now_value":"$5/month","quote":"...","source_url":"https://..."}]}
+Reply with JSON only: {"values":[{"claim_id":"c1","status":"found","now_value":"$5/month","quote":"...","source_url":"https://..."}]}
+- status is "found" when a source states the claim's current value; "plan_changed" only when an official source clearly shows that the old plan or fixed price no longer exists, for example the plan was removed or pricing is now usage-based; otherwise "not_found".
+- For "plan_changed", quote is the exact sentence or table row showing what replaced it, copied character for character from that official source, and now_value is null.
 - A source may word a claim differently (for example "Postgres storage" may appear as "Volume Storage" in a plan table); match by meaning.
 - now_value is the current value as the source states it. quote is the exact sentence or table row that states it, copied character for character from one source; it must contain the figure in now_value. Tables are given one row per line, each cell prefixed by its column header, for example "Hobby | Volume Storage: 5 GB | Price: $5/mo". To quote a table, copy one such line, or the cells you need from it in their order, and nothing from other lines.
 - source_url is the URL of that source. Sources are listed most authoritative first; prefer sources marked (official).
@@ -88,14 +92,40 @@ function byAuthority(a: Verified, b: Verified): number {
   return left.map((rank, i) => rank - right[i]).find((difference) => difference !== 0) ?? 0;
 }
 
+const SHORT_QUOTE_CHARS = 80;
+
+function shortQuote(quote: string): string {
+  const plain = quote.replace(/\*\*/g, '').replace(/\s*\|\s*/g, ' · ').replace(/\s+/g, ' ').replace(/^[\s·]+|[\s·]+$/g, '');
+  if (plain.length <= SHORT_QUOTE_CHARS) return plain;
+  return `${plain.slice(0, plain.lastIndexOf(' ', SHORT_QUOTE_CHARS))}…`;
+}
+
+function verifiedPlanChange(value: ExtractedValue, row: ClaimRow, sources: NumberedResult[]): Verified | undefined {
+  if (value.status !== 'plan_changed' || !value.quote || !value.source_url) return undefined;
+  const source = sources.find((candidate) => candidate.url === value.source_url && candidate.sourceType === 'official');
+  if (!source || !quoteAppearsIn(source.content, value.quote) || containsValue(value.quote, row.value)) return undefined;
+  return { now: '', source, quote: value.quote };
+}
+
+const statesAValue = (value: ExtractedValue) => value.status !== 'plan_changed' && value.status !== 'not_found';
+
 export function checkRows(rows: ClaimRow[], extracted: ExtractedValue[], sources: NumberedResult[]): CheckedRow[] {
   return rows.map((row) => {
-    const verified = extracted
-      .filter((value) => value.claim_id === row.id)
+    const forRow = extracted.filter((value) => value.claim_id === row.id);
+    const verified = forRow
+      .filter(statesAValue)
       .map((value) => verifiedValue(value, sources))
       .filter((value): value is Verified => value !== undefined)
       .sort(byAuthority);
-    if (!verified.length) return { ...row, now: null, changed: 'unknown' };
+    if (!verified.length) {
+      const [planChange] = forRow
+        .map((value) => verifiedPlanChange(value, row, sources))
+        .filter((value): value is Verified => value !== undefined)
+        .sort(byAuthority);
+      if (!planChange) return { ...row, now: null, changed: 'unknown' };
+      const { source, quote } = planChange;
+      return { ...row, now: null, changed: 'yes', source, quote, noLongerOffered: shortQuote(quote) };
+    }
     const official = verified.filter((value) => value.source.sourceType !== 'third_party');
     const disagreeing = official.find((value) => compareValues(official[0].now, value.now) === 'yes');
     if (disagreeing) return { ...row, now: null, changed: 'unknown', conflict: [official[0], disagreeing] };
@@ -135,7 +165,9 @@ export function renderTable(rows: CheckedRow[], tz: string): string {
     const [first, second] = row.conflict ?? [];
     const now = first && second
       ? `Conflicting sources: ${first.now} (${first.source.url}) vs ${second.now} (${second.source.url})`
-      : (row.now ?? "Couldn't confirm");
+      : row.noLongerOffered
+        ? `No longer offered: “${row.noLongerOffered}”`
+        : (row.now ?? "Couldn't confirm");
     const source = first && second
       ? `[${first.source.n}], [${second.source.n}]`
       : row.source
