@@ -84,10 +84,34 @@ test('the verdict always matches the table', () => {
     const yes = (table.match(/\| Yes \|/g) ?? []).length;
     const unknown = (table.match(/\| Unknown \|/g) ?? []).length;
     const words = ['Nothing', 'One', 'Two', 'Three'];
-    expect(verdict.startsWith(yes ? `**${words[yes]} price${yes === 1 ? '' : 's'} changed` : '**Nothing has changed')).toBe(true);
+    const confirmed = checked.length - unknown;
+    const countFirst = !yes && checked.length > 0 && confirmed * 2 <= checked.length;
+    const lead = countFirst
+      ? `**${confirmed} of ${checked.length} prices confirmed unchanged`
+      : yes
+        ? `**${words[yes]} price${yes === 1 ? '' : 's'} changed`
+        : '**Nothing has changed';
+    expect(verdict.startsWith(lead)).toBe(true);
     expect(verdict.includes("couldn't be confirmed")).toBe(unknown > 0);
-    if (unknown) expect(verdict).toContain(`${words[unknown].toLowerCase()} price${unknown === 1 ? '' : 's'} couldn't be confirmed`);
+    const unknownAmount = countFirst ? String(unknown) : `${words[unknown]?.toLowerCase()} price${unknown === 1 ? '' : 's'}`;
+    if (unknown) expect(verdict).toContain(`${unknownAmount} couldn't be confirmed`);
   }
+});
+
+test('when most prices are unconfirmed, the verdict leads with the count instead of "nothing has changed"', () => {
+  const row = (changed: CheckedRow['changed'], i: number): CheckedRow => ({
+    ...claim('Vendor', `figure ${i}`, '$1'),
+    id: `c${i}`,
+    now: changed === 'unknown' ? null : '$1',
+    changed,
+  });
+  const rowsOf = (...changes: CheckedRow['changed'][]) => changes.map(row);
+  const mostlyUnknown = rowsOf('no', 'no', ...Array<CheckedRow['changed']>(7).fill('unknown'));
+  expect(renderVerdict(mostlyUnknown, since)).toBe("**2 of 9 prices confirmed unchanged; 7 couldn't be confirmed.**");
+  const mostlyConfirmed = rowsOf('no', 'no', 'unknown');
+  expect(renderVerdict(mostlyConfirmed, since)).toBe(`**Nothing has changed since ${since}; one price couldn't be confirmed.**`);
+  const changedButMostlyUnknown = rowsOf('yes', 'unknown', 'unknown');
+  expect(renderVerdict(changedButMostlyUnknown, since)).toBe(`**One price changed since ${since}; two prices couldn't be confirmed.**`);
 });
 
 test('Railway Hobby storage 1 GB → 5 GB shows as changed, and $5 a month as unchanged', () => {
@@ -185,7 +209,7 @@ test('two official sources with different values are a conflict, not a change', 
     'Conflicting sources: $0.106/CU-hour (https://neon.com/docs/introduction/plans) vs $0.14 per CU-hour (https://neon.com/blog/new-usage-based-pricing)',
   );
   expect(table).toContain('| Unknown | [1], [2] |');
-  expect(renderVerdict([row], since)).toBe('**Nothing has changed since these prices were checked on 3 to 13 Nov; one price has conflicting sources.**');
+  expect(renderVerdict([row], since)).toBe('**0 of 1 prices confirmed unchanged; 1 has conflicting sources.**');
 });
 
 test('when official sources agree, the pricing or docs page is the one cited, not the blog', () => {

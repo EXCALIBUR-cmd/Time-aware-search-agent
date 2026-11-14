@@ -110,11 +110,19 @@ export function renderVerdict(rows: CheckedRow[], since: string): string {
   const changed = rows.filter((row) => row.changed === 'yes').length;
   const unconfirmed = rows.filter((row) => row.changed === 'unknown' && !row.conflict).length;
   const conflicting = rows.filter((row) => row.conflict).length;
-  const lead = changed ? `${counted(changed, 'price')} changed since ${since}` : `Nothing has changed since ${since}`;
+  const confirmed = rows.length - unconfirmed - conflicting;
+  const mostAreUnconfirmed = rows.length > 0 && confirmed * 2 <= rows.length;
+  const leadWithTheCount = !changed && mostAreUnconfirmed;
+  const amount = (n: number) => (leadWithTheCount ? String(n) : counted(n, 'price').toLowerCase());
   const caveats = [
-    unconfirmed ? `${counted(unconfirmed, 'price').toLowerCase()} couldn't be confirmed` : '',
-    conflicting ? `${counted(conflicting, 'price').toLowerCase()} ${conflicting === 1 ? 'has' : 'have'} conflicting sources` : '',
+    unconfirmed ? `${amount(unconfirmed)} couldn't be confirmed` : '',
+    conflicting ? `${amount(conflicting)} ${conflicting === 1 ? 'has' : 'have'} conflicting sources` : '',
   ].filter(Boolean);
+  const lead = leadWithTheCount
+    ? `${confirmed} of ${rows.length} prices confirmed unchanged`
+    : changed
+      ? `${counted(changed, 'price')} changed since ${since}`
+      : `Nothing has changed since ${since}`;
   return `**${[lead, ...caveats].join('; ')}.**`;
 }
 
