@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 import { classifySource, officialDomainFor } from './official';
-import { findEvidence, planVendorChecks, type EvidenceSources } from './reverify-search';
+import { findEvidence, isAnsweredBy, planVendorChecks, type EvidenceSources } from './reverify-search';
 import type { SearchResult } from './tavily';
 
 const PRICED = 'The Launch plan costs $19/month and storage is $0.35 per GB-month.';
@@ -118,4 +118,50 @@ test('a vendor with no known domain gets a generic "official pricing" query; off
   );
   expect(calls).toContain('search Fly.io Postgres official pricing');
   expect(evidence.map((r) => r.url)).toEqual(['https://fly.io/docs/about/pricing', 'https://neon.com/pricing']);
+});
+
+test('a claim counts as answered when a result names what it is about, not just any price', () => {
+  const page = [result('https://railway.com/pricing', 'Hobby plan: $5/month with $5 of usage credit.')];
+  expect(isAnsweredBy('Hobby plan monthly cost', page)).toBe(true);
+  expect(isAnsweredBy('Hobby plan usage credit', page)).toBe(true);
+  expect(isAnsweredBy('Hobby plan Postgres storage', page)).toBe(false);
+  expect(isAnsweredBy('monthly price', page)).toBe(true);
+  expect(isAnsweredBy('monthly price', [result('https://railway.com/about', 'Deploy apps.')])).toBe(false);
+});
+
+test('only the claim the official pages leave unanswered gets a third-party search', async () => {
+  const railwayPage = 'Hobby plan: $5/month with $5 of usage credit.';
+  const { sources, calls } = fakeSources({
+    'Railway pricing @railway.com': [result('https://railway.com/pricing', railwayPage)],
+    'Railway Hobby plan Postgres storage': [result('https://getdeploying.com/railway'), result('https://docs.railway.com/volumes')],
+  });
+  const check = {
+    vendor: 'Railway',
+    domain: 'railway.com',
+    officialUrl: 'https://railway.com/pricing',
+    attributes: ['Hobby plan monthly cost', 'Hobby plan usage credit', 'Hobby plan Postgres storage'],
+  };
+  const evidence = await findEvidence([check], sources);
+  expect(calls).toEqual([
+    'search Railway pricing @railway.com',
+    'extract https://railway.com/pricing',
+    'search Railway Hobby plan Postgres storage',
+  ]);
+  expect(evidence.map((r) => [r.url, r.sourceType])).toEqual([
+    ['https://railway.com/pricing', 'official'],
+    ['https://getdeploying.com/railway', 'third_party'],
+  ]);
+});
+
+test('third-party searches are capped at 2 per turn, across all vendors', async () => {
+  const { sources, calls } = fakeSources({});
+  await findEvidence(
+    [
+      { vendor: 'Neon', domain: 'neon.com', attributes: ['Launch compute', 'Scale compute'] },
+      { vendor: 'Supabase', domain: 'supabase.com', attributes: ['Pro storage'] },
+    ],
+    sources,
+  );
+  const thirdPartySearches = calls.filter((call) => call.startsWith('search') && !call.includes('@'));
+  expect(thirdPartySearches).toEqual(['search Neon Launch compute', 'search Neon Scale compute']);
 });

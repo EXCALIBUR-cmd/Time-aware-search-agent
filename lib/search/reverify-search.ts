@@ -1,4 +1,4 @@
-import { classifySource, officialDomainFor } from './official';
+import { classifySource, officialDomainFor, wordsOf } from './official';
 import type { SearchResult } from './tavily';
 import { bestPassage, mentionsPrice } from './web-search-tool';
 
@@ -11,8 +11,12 @@ export type EvidenceSources = {
 
 const MAX_VENDORS = 4;
 const OFFICIAL_RESULTS_PER_VENDOR = 2;
-const THIRD_PARTY_RESULTS_PER_VENDOR = 2;
+const THIRD_PARTY_SEARCHES_PER_TURN = 2;
+const THIRD_PARTY_RESULTS_PER_CLAIM = 2;
 const PRICING_PAGE_PASSAGE_CHARS = 1200;
+const GENERIC_ATTRIBUTE_WORDS = new Set([
+  'the', 'and', 'for', 'per', 'plan', 'plans', 'price', 'pricing', 'cost', 'costs', 'monthly', 'month', 'fee', 'tier', 'limit',
+]);
 
 export function planVendorChecks(claims: ClaimToCheck[]): VendorCheck[] {
   const byVendor = new Map<string, VendorCheck>();
@@ -29,12 +33,17 @@ export function planVendorChecks(claims: ClaimToCheck[]): VendorCheck[] {
   return [...byVendor.values()].slice(0, MAX_VENDORS);
 }
 
-const labelled = (results: SearchResult[], check: VendorCheck, sourceType: SearchResult['sourceType'], chars?: number) =>
-  results.map((result) => ({
-    ...result,
-    sourceType,
-    content: bestPassage(result.content, `${check.vendor} ${check.attributes.join(' ')}`, chars),
-  }));
+export function isAnsweredBy(attribute: string, results: SearchResult[]): boolean {
+  const distinctive = wordsOf(attribute).filter((word) => word.length > 2 && !GENERIC_ATTRIBUTE_WORDS.has(word));
+  if (!distinctive.length) return results.some((result) => mentionsPrice(result.content));
+  return results.some((result) => {
+    const content = result.content.toLowerCase();
+    return distinctive.every((word) => content.includes(word));
+  });
+}
+
+const labelled = (results: SearchResult[], focus: string, sourceType: SearchResult['sourceType'], chars?: number) =>
+  results.map((result) => ({ ...result, sourceType, content: bestPassage(result.content, focus, chars) }));
 
 async function officialEvidence(check: VendorCheck, sources: EvidenceSources): Promise<SearchResult[]> {
   if (!check.domain) {
@@ -42,7 +51,8 @@ async function officialEvidence(check: VendorCheck, sources: EvidenceSources): P
     return found.filter((result) => classifySource(result.url, check.vendor) === 'official');
   }
   const found = (await sources.search(`${check.vendor} pricing`, [check.domain])).slice(0, OFFICIAL_RESULTS_PER_VENDOR);
-  if (found.some((result) => mentionsPrice(result.content))) return found;
+  const everyClaimAnswered = check.attributes.every((attribute) => isAnsweredBy(attribute, found));
+  if (everyClaimAnswered) return found;
   const pricingPage = check.officialUrl ?? found[0]?.url ?? `https://${check.domain}/pricing`;
   const page = await sources.extract(pricingPage).catch(() => undefined);
   if (!page) return found;
@@ -50,23 +60,23 @@ async function officialEvidence(check: VendorCheck, sources: EvidenceSources): P
   return [fromPage, ...found.filter((result) => result.url !== pricingPage)];
 }
 
-async function evidenceFor(check: VendorCheck, sources: EvidenceSources) {
-  const official = await officialEvidence(check, sources).catch(() => []);
-  const answeredOfficially = official.some((result) => mentionsPrice(result.content));
-  if (answeredOfficially) return { official: labelled(official, check, 'official', PRICING_PAGE_PASSAGE_CHARS), thirdParty: [] };
-  const elsewhere = await sources.search(`${check.vendor} ${check.attributes[0] ?? 'pricing'}`).catch(() => []);
-  const thirdParty = elsewhere
-    .filter((result) => classifySource(result.url, check.vendor) === 'third_party')
-    .slice(0, THIRD_PARTY_RESULTS_PER_VENDOR);
-  return {
-    official: labelled(official, check, 'official', PRICING_PAGE_PASSAGE_CHARS),
-    thirdParty: labelled(thirdParty, check, 'third_party'),
-  };
+async function thirdPartyEvidence(check: VendorCheck, attribute: string, sources: EvidenceSources) {
+  const found = await sources.search(`${check.vendor} ${attribute}`).catch(() => []);
+  const elsewhere = found.filter((result) => classifySource(result.url, check.vendor) === 'third_party');
+  return labelled(elsewhere.slice(0, THIRD_PARTY_RESULTS_PER_CLAIM), `${check.vendor} ${attribute}`, 'third_party');
 }
 
 export async function findEvidence(checks: VendorCheck[], sources: EvidenceSources): Promise<SearchResult[]> {
-  const perVendor = await Promise.all(checks.map((check) => evidenceFor(check, sources)));
-  const officialFirst = [...perVendor.flatMap((v) => v.official), ...perVendor.flatMap((v) => v.thirdParty)];
+  const officialPerVendor = await Promise.all(checks.map((check) => officialEvidence(check, sources).catch(() => [])));
+  const unconfirmed = checks
+    .flatMap((check, i) =>
+      check.attributes.filter((attribute) => !isAnsweredBy(attribute, officialPerVendor[i])).map((attribute) => ({ check, attribute })),
+    )
+    .slice(0, THIRD_PARTY_SEARCHES_PER_TURN);
+  const thirdParty = await Promise.all(unconfirmed.map(({ check, attribute }) => thirdPartyEvidence(check, attribute, sources)));
+  const official = officialPerVendor.flatMap((results, i) =>
+    labelled(results, `${checks[i].vendor} ${checks[i].attributes.join(' ')}`, 'official', PRICING_PAGE_PASSAGE_CHARS),
+  );
   const seen = new Set<string>();
-  return officialFirst.filter((result) => !seen.has(result.url) && seen.add(result.url));
+  return [...official, ...thirdParty.flat()].filter((result) => !seen.has(result.url) && seen.add(result.url));
 }
