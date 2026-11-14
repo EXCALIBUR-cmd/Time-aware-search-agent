@@ -1,5 +1,6 @@
 import { classifySource, officialDomainFor } from './official';
 import { distinctiveWords, passagePerClaim } from './passages';
+import { flattenTables } from './tables';
 import type { SearchResult } from './tavily';
 import { bestPassage, mentionsPrice } from './web-search-tool';
 
@@ -55,7 +56,7 @@ export function isAnsweredBy(attribute: string, results: SearchResult[]): boolea
 }
 
 const labelled = (results: SearchResult[], focus: string, sourceType: SearchResult['sourceType'], chars?: number) =>
-  results.map((result) => ({ ...result, sourceType, content: bestPassage(result.content, focus, chars) }));
+  results.map((result) => ({ ...result, sourceType, content: bestPassage(flattenTables(result.content).text, focus, chars) }));
 
 async function officialEvidence(check: VendorCheck, sources: EvidenceSources): Promise<SearchResult[]> {
   if (!check.domain) {

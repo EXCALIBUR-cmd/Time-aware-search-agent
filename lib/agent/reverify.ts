@@ -34,7 +34,7 @@ export type ExtractedValue = z.infer<typeof Extraction>['values'][number];
 export const EXTRACTION_SYSTEM = `You check stored claims against fetched sources. For every claim, find its current value in the sources.
 Reply with JSON only: {"values":[{"claim_id":"c1","now_value":"$5/month","quote":"...","source_url":"https://..."}]}
 - A source may word a claim differently (for example "Postgres storage" may appear as "Volume Storage" in a plan table); match by meaning.
-- now_value is the current value as the source states it. quote is the exact sentence or table row that states it, copied character for character from one source; it must contain the figure in now_value. For a table, copy exactly one whole row, including its | characters, and nothing from other rows.
+- now_value is the current value as the source states it. quote is the exact sentence or table row that states it, copied character for character from one source; it must contain the figure in now_value. Tables are given one row per line, each cell prefixed by its column header, for example "Hobby | Volume Storage: 5 GB | Price: $5/mo". To quote a table, copy one such line, or the cells you need from it in their order, and nothing from other lines.
 - source_url is the URL of that source. Sources are listed most authoritative first; prefer sources marked (official).
 - When more than one source states a claim's value, return one entry per source, all with the same claim_id.
 - If no source states the value, use null for now_value, quote and source_url. Never guess.`;

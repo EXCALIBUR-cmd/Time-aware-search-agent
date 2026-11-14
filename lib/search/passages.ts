@@ -1,4 +1,5 @@
 import { wordsOf } from './official';
+import { flattenTables } from './tables';
 import { bestPassage } from './web-search-tool';
 
 const CLAIM_PAGE_CHARS = 1800;
@@ -13,21 +14,6 @@ type Span = { start: number; end: number };
 
 export const distinctiveWords = (attribute: string) =>
   wordsOf(attribute).filter((word) => word.length > 2 && !GENERIC_ATTRIBUTE_WORDS.has(word));
-
-function tableRowsMentioning(content: string, words: string[]): string[] {
-  const tables: string[][] = [];
-  let current: string[] = [];
-  for (const line of content.split('\n')) {
-    if (line.trim().startsWith('|')) current.push(line.trim());
-    else if (current.length) tables.push(current), (current = []);
-  }
-  if (current.length) tables.push(current);
-  return tables.flatMap((table) => {
-    const [header, separator, ...rows] = table;
-    const matching = rows.filter((row) => words.some((word) => row.toLowerCase().includes(word)));
-    return matching.length ? [header, separator, ...matching].join('\n') : [];
-  });
-}
 
 function windowCovering(content: string, words: string[], chars: number): Span | undefined {
   const lower = content.toLowerCase();
@@ -74,11 +60,24 @@ function takeUpTo(pieces: string[], chars: number): string[] {
 }
 
 export function passagePerClaim(content: string, attributes: string[], focus: string): string {
-  if (content.length <= CLAIM_PAGE_CHARS) return content;
+  const { text, rows } = flattenTables(content);
+  if (text.length <= CLAIM_PAGE_CHARS) return text;
   const words = [...new Set(attributes.flatMap(distinctiveWords))];
-  const tables = takeUpTo(tableRowsMentioning(content, words), TABLE_SHARE_CHARS);
-  const tableChars = tables.reduce((sum, table) => sum + table.length, 0);
-  const windows = mergedWindows(content, attributes).map(({ start, end }) => `…${content.slice(start, end)}…`);
-  const pieces = [...tables, ...takeUpTo(windows, CLAIM_PAGE_CHARS - tableChars)];
-  return pieces.length ? pieces.join('\n\n') : bestPassage(content, focus, CLAIM_PAGE_CHARS);
+  const relevance = (row: string) => {
+    const label = row.split(' | ')[0].toLowerCase();
+    const lower = row.toLowerCase();
+    return words.filter((word) => label.includes(word)).length * 2 + words.filter((word) => lower.includes(word)).length;
+  };
+  const matchingRows = takeUpTo(
+    rows
+      .map((row, position) => ({ row, position, score: relevance(row) }))
+      .filter(({ score }) => score > 0)
+      .sort((a, b) => b.score - a.score || a.position - b.position)
+      .map(({ row }) => row),
+    TABLE_SHARE_CHARS,
+  );
+  const rowChars = matchingRows.reduce((sum, row) => sum + row.length, 0);
+  const windows = mergedWindows(text, attributes).map(({ start, end }) => `…${text.slice(start, end)}…`);
+  const pieces = [matchingRows.join('\n'), ...takeUpTo(windows, CLAIM_PAGE_CHARS - rowChars)].filter(Boolean);
+  return pieces.length ? pieces.join('\n\n') : bestPassage(text, focus, CLAIM_PAGE_CHARS);
 }
