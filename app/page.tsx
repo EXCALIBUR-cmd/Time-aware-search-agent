@@ -6,6 +6,7 @@ import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'rea
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { citedSources, withoutSourcesSection } from '@/lib/citations';
+import { reportsAConfirmedChange } from '@/lib/verdict';
 
 type Conversation = { id: string; title: string; created_at: string; is_demo: 0 | 1 };
 type ServerClock = { now: string; demoDay: string | null; demoHistory: string | null };
@@ -82,7 +83,7 @@ function Message({ message, citing = false }: { message: UIMessage; citing?: boo
   const verdict = isReverification ? VERDICT_LINE.exec(text)?.[1] : undefined;
   const withoutVerdict = verdict ? text.replace(VERDICT_LINE, '') : text;
   const body = sources.length ? withoutSourcesSection(withoutVerdict) : withoutVerdict;
-  const nothingChanged = verdict?.startsWith('Nothing has changed');
+  const confirmedChange = verdict !== undefined && reportsAConfirmedChange(verdict);
   if (message.role === 'user') {
     return <div className="ml-auto w-fit max-w-[85%] whitespace-pre-wrap rounded-2xl bg-zinc-100 px-4 py-2 dark:bg-zinc-800">{text}</div>;
   }
@@ -94,7 +95,7 @@ function Message({ message, citing = false }: { message: UIMessage; citing?: boo
       >
       {verdict && (
         <p
-          className={`rounded-lg border px-3 py-2 text-sm font-medium ${nothingChanged ? 'border-zinc-200 bg-zinc-50 text-zinc-800 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200' : 'border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-200'}`}
+          className={`rounded-lg border px-3 py-2 text-sm font-medium ${confirmedChange ? 'border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-200' : 'border-zinc-200 bg-zinc-50 text-zinc-800 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200'}`}
         >
           {verdict}
         </p>
